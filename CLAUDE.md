@@ -1,67 +1,60 @@
-# Fragsmith — regler for Claude Code
+# Fragsmith — rules for Claude Code
 
-Autonom pipeline: CS2 .dem-fil → ferdig fragmovie (mp4) med musikk-sync,
-slow-motion og overlays.
+Autonomous pipeline: CS2 `.dem` file → finished fragmovie (mp4) with music sync, slow motion and overlays.
 
-## Arkitektur (kort)
-- **Steg 1** parse demo (demoparser2) → `runs/<id>/00-events.json`
-- **Steg 2** regelbasert hype-scoring → `runs/<id>/01-candidates.json` (maks 25)
-- **Steg 3** AI Director (Claude + Pydantic, retry maks 3) → `02-edit-plan.json`
-- **FASESTOPP:** vis edit-plan + estimert render-tid/disk, vent på OK
-- **Steg 4** render råklipp via `csdm video` (kjører på RENDER-PC-en, se under).
-  P20: klipp som skal i slow-mo (Director-segmenter fra steg 3, headshot-
-  mikro eller replay — delt logikk: `edit_engine.wants_high_fps` +
-  `pick_replay_clip`) rendres i `[render].highfps_framerate` (120). csdm
-  har GLOBALT framerate, så workeren kjører ett pass per framerate (egen
-  CS2-oppstart per pass). Steg 6 bremser høy-fps-kilder med ekte frames
-  (setpts) og hopper over minterpolate (P8) for dem.
-- **Steg 5** beat-analyse (librosa) — kan gå parallelt med steg 4
-- **Steg 6** editing engine (rå ffmpeg via subprocess — IKKE moviepy)
-- **Steg 7** assembly → `final.mp4` + `report.md`
+## Architecture (short)
+- **Step 1** parse demo (demoparser2) → `runs/<id>/00-events.json`
+- **Step 2** rule-based hype scoring → `runs/<id>/01-candidates.json` (max 25)
+- **Step 3** AI Director (Claude + Pydantic, max 3 retries) → `02-edit-plan.json`
+- **PHASE STOP:** show the edit plan + estimated render time/disk, wait for OK
+- **Step 4** render raw clips via `csdm video` (runs on the render PC, see below).
+  Clips that will get slow-mo (Director segments from step 3, headshot micro
+  slow-mo or replay — shared logic: `edit_engine.wants_high_fps` +
+  `pick_replay_clip`) are rendered at `[render].highfps_framerate` (120). csdm
+  has a GLOBAL framerate, so the worker runs one pass per framerate (separate
+  CS2 launch per pass). Step 6 slows high-fps sources with real frames
+  (setpts) and skips minterpolate for them.
+- **Step 5** beat analysis (librosa) — can run in parallel with step 4
+- **Step 6** editing engine (raw ffmpeg via subprocess — NOT moviepy)
+- **Step 7** assembly → `final.mp4` + `report.md`
 
-LLM brukes KUN i steg 3. Alt annet er deterministisk script.
+The LLM is used ONLY in step 3. Everything else is a deterministic script.
 
-## To-PC-oppsett
-- **Denne PC-en (dev):** alt unntatt rendering.
-- **Render-PC (med CS2 + CS Demo Manager):** kjører `worker.py` som plukker
-  render-jobber fra en delt mappe og legger råklipp tilbake. I starten:
-  USB-overføring i stedet for delt mappe — samme jobbformat.
-- Rendering ALDRI parallelt — ett CS2-vindu om gangen.
+## Render PC
+- **Main PC:** everything except rendering.
+- **Render PC (with CS2 + CS Demo Manager):** runs `worker.py` (standard library
+  only), which picks up render jobs from a job folder (SSH, shared folder or
+  USB) and puts raw clips back. See `docs/two-pc-setup.md`.
+- NEVER render in parallel — one CS2 window at a time.
 
-## Faste regler
-- Les `learnings_runtime.md` som steg 0 i enhver kjøring — FØR alt annet.
-  Det er main.py sitt ansvar å gjøre dette.
-- Norsk i alle brukervendte meldinger.
-- Alle csdm/ffmpeg-kommandoer logges ordrett med exit code + stderr.
-- Feilede klipp svelges aldri stille — logg og flagg i report.md.
-- Temp-filer (råklipp) slettes KUN med `--cleanup` eller etter bekreftelse.
-- HLAE-feil i steg 4 → stopp HELE kjøringen, ikke retry blindt
-  (spilloppdateringer brekker HLAE; sjekk om csdm/HLAE trenger oppdatering).
+## Fixed rules
+- Read `learnings_runtime.md` as step 0 of every run — BEFORE anything else.
+  That's main.py's job.
+- English in all user-facing messages.
+- Every csdm/ffmpeg command is logged verbatim with exit code + stderr.
+- Failed clips are never swallowed silently — log and flag them in report.md.
+- Temp files (raw clips) are deleted ONLY with `cleanup` or after confirmation.
+- HLAE error in step 4 → stop the WHOLE run, don't retry blindly
+  (game updates break HLAE; check whether csdm/HLAE needs an update).
+- Personal data (SteamIDs, paths, hosts) lives only in `config.toml`, which
+  is gitignored. Never commit it; `config.example.toml` holds placeholders.
 
-## Kjente spillere
-Konfigurert i config.toml `[players].known_players`. Pipelinen velger
-automatisk den av disse som er i demoen; flere → høyest samlet hype-score.
-`--player <steamid64>` overstyrer.
+## Known players
+Configured in `config.toml` `[players].known_players`. The pipeline picks
+whichever of them is in the demo; if several are, the highest total hype
+score wins. `--player <steamid64>` overrides.
 
-## Learnings
-- `learnings_build.md` — feller/mønstre oppdaget under BYGGING av prosjektet.
-  Les før du endrer kode her.
-- `learnings_runtime.md` — mønstre fra KJØRINGER (demo-kilder som parser
-  annerledes, HLAE-brekk, scoring-bommer, ffmpeg-artefakter).
-  Agenten foreslår tillegg etter hver kjøring; brukeren godkjenner.
-- Ikke bland disse med idea-factory sine learnings-filer i rot — de handler
-  om fabrikkprosessen, ikke dette prosjektet.
+## Notes
+- `docs/dev-notes.md` — traps and patterns discovered while BUILDING the
+  project. Read before changing code here.
+- `docs/troubleshooting.md` — known issues when RUNNING it.
+- `learnings_runtime.md` — the user's own notes from runs. Suggest additions
+  after a run; the user approves.
+- `docs/effects.md` — every effect and its config flag.
 
-## Status (oppdateres per fase)
-- [x] Fase a: skjelett + parse + hype-scoring
-- [x] Fase b: AI Director
-- [x] Fase c: csdm-wrapper + worker for render-PC — VERIFISERT med ekte
-      rendering 2026-07-04 (3 filmer levert: nuke, inferno, cache)
-- [x] Fase d: beats (librosa) + editing engine — testet med mock-klipp
-- [x] Fase e: assembly → final.mp4 + report.md — testet med mock-klipp
-- [x] Fase f: batch-kø (steg 0-3) + processed.json + cleanup-kommando
+## CLI
+`run <demo>` (steps 0-3, phase stop) · `render <run-dir>` (step 4: queue the
+job — THIS is the approval) · `finish <run-dir>` (steps 5-7, fetches clips
+from the outbox itself) · `batch <folder>` · `cleanup <run-dir>`.
 
-CLI: `run <demo>` (steg 0-3, fasestopp) · `render <run-dir>` (steg 4:
-legg jobb i kø — DETTE er godkjenningen) · `finish <run-dir>` (steg 5-7,
-henter klipp fra outbox selv) · `batch <mappe>` · `cleanup <run-dir>`.
-Worker på render-PC-en: worker.py (kun stdlib) — se RENDER-PC-OPPSETT.md.
+Tests: `python tests/test_*.py` (no pytest). See `tests/README.md`.

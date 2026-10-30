@@ -1,51 +1,54 @@
 # Fragsmith
 
-Tar en CS2-demo (`.dem`) og lager automatisk en ferdig fragmovie (mp4) med de beste øyeblikkene, musikk-sync, slow-motion og overlays.
+Turn a CS2 demo (`.dem`) into a finished fragmovie (mp4) automatically, with the best moments, music sync, slow motion and overlays.
 
-## Slik fungerer det
+## How it works
 
-| Steg | Hva | Verktøy |
+| Step | What | Tool |
 |---|---|---|
-| 1 | Parser demoen: kills, headshots, våpen, clutcher | demoparser2 |
-| 2 | Regelbasert hype-scoring av kill-clustere | script |
-| 3 | AI Director velger klipp, rekkefølge og slow-mo | Claude (eneste LLM-steg) |
-| 4 | Rendrer råklipp fra demoen | CS Demo Manager (`csdm video`) + HLAE |
-| 5 | Beat-analyse av valgt musikkspor | librosa |
-| 6–7 | Klipping, effekter og sammensetting til `final.mp4` | ffmpeg |
+| 1 | Parses the demo: kills, headshots, weapons, clutches | demoparser2 |
+| 2 | Rule-based hype scoring of kill clusters | script |
+| 3 | AI Director picks clips, order and slow-mo | Claude (the only LLM step) |
+| 4 | Renders raw clips from the demo | CS Demo Manager (`csdm video`) + HLAE |
+| 5 | Beat analysis of the chosen music track | librosa |
+| 6–7 | Cutting, effects and assembly into `final.mp4` | ffmpeg |
 
-Det er en pause etter steg 3: du ser edit-planen og estimert render-tid før noe rendres.
+There's a pause after step 3: you see the edit plan and the estimated render time before anything is rendered.
 
-## Oppsett
+## Setup
 
-Krever Python, ffmpeg og en `ANTHROPIC_API_KEY` i `.env`. Kopier `config.example.toml` til `config.toml` og fyll inn dine verdier.
+Requires Python, ffmpeg and an `ANTHROPIC_API_KEY` in `.env`.
 
 ```
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
+copy config.example.toml config.toml
 ```
 
-Rendering (steg 4) krever en Windows-PC med CS2 og CS Demo Manager installert. Det kan være samme PC eller en egen render-PC som kjører `worker.py`. Se [RENDER-PC-OPPSETT.md](RENDER-PC-OPPSETT.md).
+Then fill in your SteamID64 and music folder in `config.toml`.
 
-Innstillinger (spillere, musikkmappe, effekter, render-oppløsning) ligger i `config.toml`.
+Rendering (step 4) needs a Windows PC with CS2 and CS Demo Manager installed. It can be the same PC or a separate render PC running `worker.py`. See [docs/two-pc-setup.md](docs/two-pc-setup.md).
 
-## Bruk
+## Usage
 
 ```
-python main.py run <demo.dem>        # steg 1–3, viser edit-plan
-python main.py render runs/<id>      # steg 4, sender render-jobb til worker
-python main.py finish runs/<id>      # steg 5–7, lager final.mp4
-python main.py batch <mappe>         # steg 1–3 for alle demoer i en mappe
-python main.py cleanup runs/<id>     # sletter råklipp og mellomfiler
+python main.py run <demo.dem>        # steps 1–3, shows the edit plan
+python main.py render runs/<id>      # step 4, sends the render job to the worker
+python main.py finish runs/<id>      # steps 5–7, creates final.mp4
+python main.py batch <folder>        # steps 1–3 for every demo in a folder
+python main.py cleanup runs/<id>     # deletes raw clips and intermediate files
 ```
 
-## Begrensninger
+## Limitations
 
-- Kun `.dem`-input, ikke rå video.
-- Kun lokal musikkmappe (ingen Suno/Udio-integrasjon).
-- Kun spiller-POV, ikke cinematic kamera.
-- CS2 spiller bare av ferske demoer (versjonslåst), og HLAE kan brekke midlertidig ved spilloppdateringer.
+- `.dem` input only, not raw video.
+- Music from a local folder only.
+- Player POV only, no cinematic camera paths.
+- CS2 only plays back fresh demos (version-locked), and HLAE can break temporarily after game updates.
 
-## Mer dokumentasjon
+## Documentation
 
-- [docs/oppgraderinger-spec.md](docs/oppgraderinger-spec.md): effektoppgraderinger
-- `learnings_*.md` og [decisions.md](decisions.md): erfaringer og designvalg
+- [docs/effects.md](docs/effects.md): every effect and its config flag
+- [docs/two-pc-setup.md](docs/two-pc-setup.md): rendering on a separate PC
+- [docs/troubleshooting.md](docs/troubleshooting.md): known issues
+- [docs/dev-notes.md](docs/dev-notes.md): notes for contributors

@@ -1,0 +1,57 @@
+# Developer notes
+
+Traps and facts discovered while building Fragsmith. Read this before changing the editing engine or the render worker. Format: `- <what> — <consequence/rule>`
+
+## Demo parsing
+
+- Valve matchmaking demos can lack `round_end` for the last round (surrender), so `total_rounds_played` points outside the round list. `parse_demo` synthesizes a final round without a winner.
+- Valve matchmaking stores demos as `.dem.bz2`. `main.py` extracts them automatically and keeps the `.bz2`.
+- demoparser2 columns match the documentation on Valve MM demos (`attacker_`/`user_` prefixes, `total_rounds_played`, `is_warmup_period`, `team_num` 2=T / 3=CT).
+- Silent clutches (won without kills in the clutch phase, e.g. on time or defuse) used to flag earlier kills in the round as clutch kills. `detect_won_clutches` now returns `from_tick`, and only clips ending after it get the flag.
+
+## CS Demo Manager CLI (csdm)
+
+- cs-demo-manager.com blocks automated fetching. Read CLI facts from the source on GitHub (`akiver/cs-demo-manager`).
+- A demo **must** be analyzed first (`csdm analyze`, which skips already analyzed demos).
+- `--config-file` renders all sequences in **one** CS2 launch, which is much faster than one launch per clip.
+- POV is set per sequence via `playerCameras: [{tick, playerSteamId, playerName}]`.
+- Enums: `recordingSystem` HLAE|CS, `encoderSoftware` FFmpeg|VirtualDub, `recordingOutput` video|images|images-and-video.
+- Output names: `sequence-<N>-tick-<start>-to-<end>.<container>`.
+- The **default** ffmpeg container is AVI (+ mp3 audio, crf 23). Always send explicit `ffmpegSettings` (mp4/aac/crf 18). An early bug: the worker globbed `*.mp4` and deleted the raw folder containing the AVIs. Rule: never delete work files when the expected output is missing.
+- `framerate` is **global** in the video config, not per sequence (`src/common/types/sequence.ts`). High-fps rendering therefore runs one render pass per framerate (separate CS2 launch, ~1–2 min extra).
+- Sequences have a `cfg` field (per-sequence console commands). That's the way in for in-game FOV zoom.
+
+## Render worker
+
+- Microsoft Store Python shows up as `python3.12.exe` in the process list, so `taskkill /IM python.exe` misses it.
+- A running worker doesn't load new code. Restart it after changing `worker.py` and check `worker.log` for a "worker started" line with the right timestamp.
+
+## ffmpeg filter graphs
+
+- The `concat` filter requires the **same resolution** on all inputs. Normalize resolution per part *before* concat.
+- The zoompan expressions compute time as `on/60` and assume 60 fps input. Normalize with `fps=60` per part before concat.
+- Rule from the two above: test `edit_engine` with mock clips in a **different resolution and fps** than 1080p60. csdm clips are always 1080p60, which hides these bugs.
+- An empty filter chain (`[vc][vout]`) is invalid in `filter_complex`. With all effects off it must fall back to the `null` filter.
+- On very long clips (80 s, 27 concat parts) content drifts ~0.5 s from accumulated frame rounding. The effects drift with it, so the film looks right, but the tail is trimmed. Negligible on normal clips (8–20 s); verify effect placement visually on clips longer than ~40 s.
+- `rgbashift` forces YUV→RGB→YUV on the **whole** stream (format negotiation ignores `enable`) and loses color everywhere. Use `chromashift` (native yuv420p) for channel-shift effects.
+- In `drawbox` expressions, `t` means **thickness**, not time. Time-animated position needs `overlay` with `t` in the x/y expressions.
+- Verify animations with `signalstats`/YAVG per frame, not by looking at a single frame.
+
+## drawtext
+
+- ASCII apostrophes can't be escaped robustly through both the filter-graph and drawtext parsing levels. `drawtext_escape` replaces `'` with a typographic `’`.
+- With `expansion=normal` (the default) there's no working escape for a literal `%`. **All** drawtext calls use `:expansion=none` (we never use `%{...}`), and `drawtext_escape` doesn't touch `%`.
+
+## Audio
+
+- Synthesized sound must be peak-checked with `astats`. `volume=2.0` after `amix` clipped `impact.wav` into a square wave in 16-bit. Rule: always `alimiter=limit=0.95` as the last step of SFX synthesis, and check that the peak level is below -1 dB.
+- ffmpeg's `sine` source is quiet (~-18 dB), so "audible" needs a strong boost.
+
+## Timeline
+
+- Effects that add content at the **front** of the timeline (the cold open) must be counted into the beat-sync start position. Forgetting this put all beat sync ~0.75 s off with `intro_hook` on.
+
+## Testing
+
+- `freezedetect`/YDIF can't verify a freeze frame when film grain is on, since grain changes every frame. Use a contact sheet (`fps=5` + `tile`) instead.
+- See [tests/README.md](../tests/README.md) for test patterns.

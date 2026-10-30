@@ -1,22 +1,14 @@
-# Tester
+# Tests
 
-Kjøres direkte, ingen pytest nødvendig:
+Run them directly, no pytest needed:
 
+    python tests/test_p20.py
     python tests/test_p21_beats.py
     python tests/test_p21_alignment.py
 
-Suitene fra øktene 3-4 (test_p4_p10, test_p7_p11_p13, test_p9_p12_p15,
-test_p18, test_p17_p19) lå i sesjons-scratchpad og er tapt — nye tester
-legges HER i repoet så de overlever.
+## Patterns worth reusing
 
-## Mønstre (fra øktene 3-4, verdt å gjenbruke)
-
-- **Mock-klipp**: `testsrc2` i 720p/30fps — IKKE 1080p60. Motoren skal
-  normalisere selv; mock i målformatet skjuler fps/oppløsnings-feller
-  (zoompan regner tid som `on/60` og bommet på 30fps-kilder før fiksen).
-- **Effekt-verifisering**: PSNR mellom med/uten effekt, målt i tidsvinduer —
-  effekten skal gi lav PSNR i sitt vindu og ~inf utenfor.
-- **freezedetect virker IKKE med grain** (temporal støy) — bruk kontaktark
-  (tile av frames) eller PSNR mellom nabo-frames i stedet.
-- Encode med `-preset ultrafast` i tester; skru av `smooth_slowmo`
-  (minterpolate) med mindre det er det som testes.
+- **Mock clips**: use `testsrc2` at 720p/30fps, **not** 1080p60. The engine is supposed to normalize by itself, and mocks in the target format hide fps/resolution bugs (zoompan computes time as `on/60` and used to miss on 30 fps sources).
+- **Effect verification**: compare PSNR with and without the effect, measured in time windows. The effect should give low PSNR inside its window and ~inf outside.
+- **freezedetect does NOT work with grain** (temporal noise). Use a contact sheet (tiled frames) or PSNR between neighboring frames instead.
+- Encode with `-preset ultrafast` in tests, and turn off `smooth_slowmo` (minterpolate) unless that's what you're testing.
