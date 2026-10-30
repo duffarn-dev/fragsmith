@@ -942,7 +942,7 @@ def build_segments(
         if lut_path.is_file():
             fx = {**fx, "lut": str(lut_path)}
         else:
-            flags.append(f"LUT-fil finnes ikke: {lut} — grading kjører uten LUT.")
+            flags.append(f"LUT file not found: {lut} — grading runs without a LUT.")
             fx = {**fx, "lut": ""}
 
     # P19: instant replay — samme utvalg som render-siden gjorde (P17)
@@ -952,8 +952,8 @@ def build_segments(
         clip_path = clips_dir / f"{decision.clip_id}.mp4"
         if not clip_path.exists():
             flags.append(
-                f"Råklipp mangler for {decision.clip_id} — hoppet over "
-                f"(render-feil på ett klipp skal ikke stoppe filmen)."
+                f"Raw clip missing for {decision.clip_id} — skipped "
+                f"(a render error on one clip shouldn't stop the film)."
             )
             continue
 
@@ -993,8 +993,8 @@ def build_segments(
             trimmed_ms = round((desired_end - snapped) * 1000)
         else:
             flags.append(
-                f"{decision.clip_id}: ingen beat innenfor ±{tolerance}s — "
-                f"beat-sync fraveket for dette kuttet."
+                f"{decision.clip_id}: no beat within ±{tolerance}s — "
+                f"beat sync skipped for this cut."
             )
 
         # Beat-kontekst for effekter: periode + fase (første beat etter
@@ -1080,7 +1080,7 @@ def build_segments(
             if map_name:
                 ctx_parts.append(map_name)
             if getattr(cand, "round", 0):
-                ctx_parts.append(f"runde {cand.round}")
+                ctx_parts.append(f"round {cand.round}")
             clutch_vs = getattr(cand, "clutch_vs", None)
             if clutch_vs:
                 ctx_parts.append(f"1v{clutch_vs}")
@@ -1117,7 +1117,7 @@ def build_segments(
                 str(out_path),
             ],
             log_path,
-            f"steg 6: segment {decision.order:02d} ({decision.clip_id})",
+            f"step 6: segment {decision.order:02d} ({decision.clip_id})",
         )
         actual = probe_duration(out_path)
         # Faktisk synk-feil: hvor langt kuttet lander fra beatet etter
@@ -1151,8 +1151,8 @@ def build_segments(
             replay_src = alt_path
             if not alt_path.exists():
                 flags.append(
-                    f"{decision.clip_id}: offer-POV-klipp (_alt) mangler — "
-                    f"replay bygges fra samme POV i stedet."
+                    f"{decision.clip_id}: victim-POV clip (_alt) missing — "
+                    f"replay is built from the same POV instead."
                 )
                 replay_src = clip_path
             replay_out = segments_dir / (
@@ -1162,7 +1162,7 @@ def build_segments(
                 out_path, replay_src,
                 replay_kill.offset_s, _out_time(replay_kill.offset_s),
                 actual, fx, replay_out, log_path,
-                f"steg 6: replay ({decision.clip_id})",
+                f"step 6: replay ({decision.clip_id})",
             )
             # impact-SFX når drapet lander i replayen (etter rewinden)
             kill_in_replay = REPLAY_REWIND_S + (

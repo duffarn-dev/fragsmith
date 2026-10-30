@@ -33,8 +33,8 @@ def run_ffmpeg(args: list[str], log_path: Path, description: str) -> None:
             log.write(f"  stderr:\n{proc.stderr}\n")
     if proc.returncode != 0:
         raise FfmpegError(
-            f"ffmpeg feilet ({description}), exit {proc.returncode}.\n"
-            f"Kommando: {subprocess.list2cmdline(cmd)}\n"
+            f"ffmpeg failed ({description}), exit {proc.returncode}.\n"
+            f"Command: {subprocess.list2cmdline(cmd)}\n"
             f"stderr: {proc.stderr.strip()[-2000:]}"
         )
 
@@ -50,7 +50,7 @@ def probe_duration(path: Path) -> float:
         capture_output=True, text=True,
     )
     if proc.returncode != 0:
-        raise FfmpegError(f"ffprobe feilet på {path}: {proc.stderr.strip()}")
+        raise FfmpegError(f"ffprobe failed on {path}: {proc.stderr.strip()}")
     return float(proc.stdout.strip())
 
 
@@ -68,7 +68,7 @@ def probe_fps(path: Path) -> float:
         capture_output=True, text=True,
     )
     if proc.returncode != 0:
-        raise FfmpegError(f"ffprobe feilet på {path}: {proc.stderr.strip()}")
+        raise FfmpegError(f"ffprobe failed on {path}: {proc.stderr.strip()}")
     num, _, den = proc.stdout.strip().partition("/")
     return float(num) / float(den or 1)
 

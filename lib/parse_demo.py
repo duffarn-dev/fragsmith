@@ -27,9 +27,9 @@ def _col(df, *candidates: str) -> str:
         if name in df.columns:
             return name
     raise DemoParseError(
-        f"Fant ingen av kolonnene {candidates} i eventet. "
-        f"Tilgjengelige kolonner: {list(df.columns)} "
-        f"(ukjent demo-format? noter i learnings_runtime.md)"
+        f"None of the columns {candidates} were found in the event. "
+        f"Available columns: {list(df.columns)} "
+        f"(unknown demo format? note it in learnings_runtime.md)"
     )
 
 
@@ -55,7 +55,7 @@ def _team_name(value) -> str:
 def parse_demo(dem_path: str | Path) -> dict:
     dem_path = Path(dem_path)
     if not dem_path.exists():
-        raise DemoParseError(f"Finner ikke demo-fila: {dem_path}")
+        raise DemoParseError(f"Cannot find the demo file: {dem_path}")
 
     parser = DemoParser(str(dem_path))
 
@@ -74,14 +74,14 @@ def parse_demo(dem_path: str | Path) -> dict:
         )
     except Exception as exc:
         raise DemoParseError(
-            f"Klarte ikke parse player_death-events: {exc} "
-            f"(korrupt eller ustøttet demo?)"
+            f"Couldn't parse player_death events: {exc} "
+            f"(corrupt or unsupported demo?)"
         ) from exc
 
     if len(deaths) == 0:
         raise DemoParseError(
-            "0 player_death-events funnet — sannsynlig parse-feil eller "
-            "tom/korrupt demo. Sjekk demo-kilde."
+            "0 player_death events found — probably a parse error or an "
+            "empty/corrupt demo. Check the demo source."
         )
 
     if "is_warmup_period" in deaths.columns:

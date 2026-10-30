@@ -1,20 +1,20 @@
-"""Fragsmith render-worker — kjøres på RENDER-PC-en (med CS2 + CS Demo Manager).
+"""Fragsmith render worker — runs on the RENDER PC (with CS2 + CS Demo Manager).
 
-Kun standardbibliotek: trenger bare Python 3.10+ installert.
+Standard library only: just needs Python 3.10+ installed.
 
-    python worker.py --job-dir <delt mappe eller lokal kø> [--csdm <sti til csdm.exe>] [--once]
+    python worker.py --job-dir <shared folder or local queue> [--csdm <path to csdm>] [--once]
 
-Plukker jobber fra <job_dir>/inbox/, kjører per jobb:
-  1. csdm analyze <demo>       (hopper over demoer som alt er i databasen)
-  2. csdm video --config-file  (HLAE + FFmpeg; ALLE klipp i én CS2-oppstart)
-  3. Døper om outputfilene til <clip_id>.mp4 i <job_dir>/outbox/<run_id>/
+Picks up jobs from <job_dir>/inbox/ and, per job:
+  1. csdm analyze <demo>       (skips demos already in the database)
+  2. csdm video --config-file  (HLAE + FFmpeg; ALL clips in one CS2 launch)
+  3. Renames the output files to <clip_id>.mp4 in <job_dir>/outbox/<run_id>/
 
-VIKTIG:
-- PC-en må være innlogget med skrivebordssesjon — CS2 starter og er i bruk
-  under rendering. Ikke rør maskinen mens det pågår.
-- Rendering skjer aldri parallelt: én jobb, én sekvens om gangen.
-- To jobbfeil på rad → workeren stopper seg selv (typisk tegn på at en
-  spilloppdatering har brukket HLAE; oppdater CS Demo Manager og prøv igjen).
+IMPORTANT:
+- The PC must be logged in with a desktop session — CS2 launches and is in
+  use during rendering. Don't touch the machine while it runs.
+- Rendering never happens in parallel: one job, one sequence at a time.
+- Two job failures in a row → the worker stops itself (usually a sign that a
+  game update broke HLAE; update CS Demo Manager and try again).
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# CLI-et er csdm.cmd (ikke .exe) i installasjonsmappa — verifisert på render-PC
+# The CLI is csdm.cmd (not .exe) in the install folder
 DEFAULT_CSDM = (
     Path(os.environ.get("LOCALAPPDATA", ""))
     / "Programs" / "cs-demo-manager" / "csdm.cmd"
@@ -47,7 +47,7 @@ def log(msg: str, job_dir: Path | None = None) -> None:
 
 def run_csdm(csdm: Path, args: list[str], job_dir: Path) -> tuple[int, str]:
     cmd = [str(csdm), *args]
-    log(f"kjører: {subprocess.list2cmdline(cmd)}", job_dir)
+    log(f"running: {subprocess.list2cmdline(cmd)}", job_dir)
     proc = subprocess.run(
         cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
     )
@@ -58,16 +58,16 @@ def run_csdm(csdm: Path, args: list[str], job_dir: Path) -> tuple[int, str]:
     return proc.returncode, output
 
 
-ALT_SEQ_OFFSET = 100  # alt-POV-sekvenser (P17) nummereres base + 100
+ALT_SEQ_OFFSET = 100  # alternate-POV sequences are numbered base + 100
 
 
 def build_csdm_configs(job: dict, demo_path: Path, raw_dir: Path) -> list[dict]:
-    """Én csdm-config per framerate i jobben (P20). csdm har GLOBALT
-    framerate — klipp med eget "framerate"-felt (schema 1.3, slow-mo-klipp
-    i høy fps) samles derfor i et eget pass med egen CS2-oppstart.
-    Eldre jobber (uten feltet) gir nøyaktig én config som før.
-    Sekvensnummer er unike på tvers av passene, så output-mappingen
-    (sequence-N-...) er upåvirket."""
+    """One csdm config per framerate in the job. csdm has a GLOBAL
+    framerate — clips with their own "framerate" field (schema 1.3, slow-mo
+    clips at high fps) are therefore grouped into a separate pass with its
+    own CS2 launch. Older jobs (without the field) give exactly one config.
+    Sequence numbers are unique across passes, so the output mapping
+    (sequence-N-...) is unaffected."""
     video = job["video"]
     base_fps = int(video["framerate"])
     by_fps: dict[int, list[dict]] = {}
@@ -77,8 +77,8 @@ def build_csdm_configs(job: dict, demo_path: Path, raw_dir: Path) -> list[dict]:
             "number": clip["number"],
             "startTick": clip["start_tick"],
             "endTick": clip["end_tick"],
-            # P2: per-klipp X-ray fra dev-siden (ace/clutch/AWP);
-            # eldre jobber (schema 1.0) mangler feltet → av
+            # Per-clip X-ray from the main PC (ace/clutch/AWP);
+            # older jobs (schema 1.0) lack the field → off
             "showXRay": bool(clip.get("show_xray", False)),
             "showAssists": True,
             "showOnlyDeathNotices": True,
@@ -96,9 +96,9 @@ def build_csdm_configs(job: dict, demo_path: Path, raw_dir: Path) -> list[dict]:
             ],
         }
         by_fps.setdefault(fps, []).append(seq)
-        # P17: ekstra sekvens med samme tick-range fra OFFERETS POV
-        # (instant replay, P19) — arver klippets framerate (replayen
-        # bremser nettopp denne vinkelen). Eldre jobber: ingen ekstra.
+        # Extra sequence with the same tick range from the VICTIM's POV
+        # (instant replay) — inherits the clip's framerate (the replay
+        # slows down exactly this angle). Older jobs: no extra sequence.
         if clip.get("alt_pov_steamid"):
             by_fps[fps].append(
                 {
@@ -126,11 +126,11 @@ def build_csdm_configs(job: dict, demo_path: Path, raw_dir: Path) -> list[dict]:
             "height": video["height"],
             "closeGameAfterRecording": True,
             "concatenateSequences": False,
-            # P2: riktig POV-kropp/armer. Kan i sjeldne tilfeller skjule
-            # crosshair — verifiser per CS2-versjon (learnings_runtime.md)
+            # Correct POV body/arms. Can in rare cases hide the crosshair —
+            # verify per CS2 version (learnings_runtime.md)
             "trueView": bool(job.get("true_view", False)),
-            # Eksplisitt — csdm sin DEFAULT container er AVI (+ mp3-lyd,
-            # crf 23); vi vil ha forutsigbar mp4/aac
+            # Explicit — csdm's DEFAULT container is AVI (+ mp3 audio,
+            # crf 23); we want predictable mp4/aac
             "ffmpegSettings": {
                 "customExecutableLocation": "",
                 "audioBitrate": 256,
@@ -143,7 +143,7 @@ def build_csdm_configs(job: dict, demo_path: Path, raw_dir: Path) -> list[dict]:
             },
             "sequences": seqs,
         }
-        for fps, seqs in sorted(by_fps.items())  # base-fps-passet først
+        for fps, seqs in sorted(by_fps.items())  # base-fps pass first
     ]
 
 
@@ -151,8 +151,8 @@ VIDEO_EXTS = {".mp4", ".avi", ".mkv"}
 
 
 def map_outputs(raw_dir: Path, clips: list[dict]) -> tuple[dict[str, Path], list[str]]:
-    """Map produserte videofiler til clip_id via csdm sitt navnemønster:
-    sequence-<N>-tick-<start>-to-<slutt>.<container>  (get-sequence-output-file-path.ts)
+    """Map produced video files to clip_id via csdm's naming pattern:
+    sequence-<N>-tick-<start>-to-<end>.<container>  (get-sequence-output-file-path.ts)
     """
     produced = sorted(
         p for p in raw_dir.rglob("*")
@@ -172,8 +172,8 @@ def map_outputs(raw_dir: Path, clips: list[dict]) -> tuple[dict[str, Path], list
 
     if len(mapping) != len(clips) and len(produced) == len(clips):
         warnings.append(
-            "Filnavn fulgte ikke sequence-N-mønsteret — mappet i sortert "
-            "rekkefølge i stedet (verifiser klippene!)."
+            "File names didn't follow the sequence-N pattern — mapped in "
+            "sorted order instead (check the clips!)."
         )
         mapping = {
             clip["clip_id"]: f
@@ -185,26 +185,26 @@ def map_outputs(raw_dir: Path, clips: list[dict]) -> tuple[dict[str, Path], list
 def process_job(job_path: Path, job_dir: Path, csdm: Path) -> bool:
     job = json.loads(job_path.read_text(encoding="utf-8"))
     run_id = job["run_id"]
-    log(f"=== jobb {run_id}: {len(job['clips'])} klipp ===", job_dir)
+    log(f"=== job {run_id}: {len(job['clips'])} clips ===", job_dir)
 
     working = job_dir / "working" / job_path.name
     shutil.move(job_path, working)
 
-    result: dict = {"run_id": run_id, "status": "feil", "warnings": [], "clips": {}}
+    result: dict = {"run_id": run_id, "status": "failed", "warnings": [], "clips": {}}
     result_path = job_dir / "outbox" / f"{run_id}.result.json"
 
     try:
         demo_path = job_dir / "demos" / job["demo_filename"]
         if not demo_path.exists():
-            raise RuntimeError(f"Demofil mangler: {demo_path}")
+            raise RuntimeError(f"Demo file missing: {demo_path}")
 
         code, _ = run_csdm(csdm, ["analyze", str(demo_path)], job_dir)
         if code != 0:
-            raise RuntimeError(f"csdm analyze feilet (exit {code}).")
+            raise RuntimeError(f"csdm analyze failed (exit {code}).")
 
         raw_dir = job_dir / "outbox" / run_id / "_raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
-        # P20: ett render-pass per framerate (egen CS2-oppstart per pass)
+        # One render pass per framerate (separate CS2 launch per pass)
         configs = build_csdm_configs(job, demo_path, raw_dir)
         config_paths: list[Path] = []
         for i, config in enumerate(configs, start=1):
@@ -214,9 +214,9 @@ def process_job(job_path: Path, job_dir: Path, csdm: Path) -> bool:
             config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
             config_paths.append(config_path)
             log(
-                f"pass {i}/{len(configs)}: {len(config['sequences'])} sekvenser "
-                f"@ {config['framerate']} fps — starter CS2 + rendering, "
-                f"IKKE bruk PC-en nå ...",
+                f"pass {i}/{len(configs)}: {len(config['sequences'])} sequences "
+                f"@ {config['framerate']} fps — launching CS2 + rendering, "
+                f"DON'T use the PC now ...",
                 job_dir,
             )
             code, output = run_csdm(
@@ -226,15 +226,15 @@ def process_job(job_path: Path, job_dir: Path, csdm: Path) -> bool:
                 hint = ""
                 if "hlae" in output.lower():
                     hint = (
-                        " (HLAE-relatert? Spilloppdateringer brekker HLAE — "
-                        "oppdater CS Demo Manager og prøv igjen.)"
+                        " (HLAE-related? Game updates break HLAE — "
+                        "update CS Demo Manager and try again.)"
                     )
                 raise RuntimeError(
-                    f"csdm video feilet i pass {i}/{len(configs)} "
+                    f"csdm video failed in pass {i}/{len(configs)} "
                     f"(exit {code}).{hint}"
                 )
 
-        # P17: alt-POV-sekvenser mappes til <clip_id>_alt.mp4
+        # Alternate-POV sequences map to <clip_id>_alt.mp4
         all_clips = list(job["clips"])
         for clip in job["clips"]:
             if clip.get("alt_pov_steamid"):
@@ -250,43 +250,43 @@ def process_job(job_path: Path, job_dir: Path, csdm: Path) -> bool:
         for clip in all_clips:
             src = mapping.get(clip["clip_id"])
             if src is None:
-                result["clips"][clip["clip_id"]] = "mangler"
-                log(f"ADVARSEL: intet output for {clip['clip_id']}", job_dir)
+                result["clips"][clip["clip_id"]] = "missing"
+                log(f"WARNING: no output for {clip['clip_id']}", job_dir)
                 continue
-            # .mp4-navn uansett kilde-container — ffmpeg leser innhold, ikke navn
+            # .mp4 name regardless of source container — ffmpeg reads content, not names
             shutil.move(src, out_dir / f"{clip['clip_id']}.mp4")
             result["clips"][clip["clip_id"]] = "ok"
         if len(mapping) == len(all_clips):
             shutil.rmtree(raw_dir, ignore_errors=True)
         else:
-            # ALDRI slett bevis når noe mangler — list det som ligger der
+            # NEVER delete evidence when something is missing — list what's there
             leftovers = [str(p.relative_to(raw_dir)) for p in raw_dir.rglob("*") if p.is_file()]
             result["raw_leftovers"] = leftovers[:50]
-            log(f"beholder _raw for feilsøking ({len(leftovers)} filer)", job_dir)
+            log(f"keeping _raw for troubleshooting ({len(leftovers)} files)", job_dir)
 
         done = [v for v in result["clips"].values() if v == "ok"]
-        # csdm kan returnere exit 0 selv om avspillingen feilet (f.eks.
-        # "demo file incompatible") — antall faktiske output-filer er fasiten.
+        # csdm can return exit 0 even when playback failed (e.g.
+        # "demo file incompatible") — the number of actual output files is the truth.
         if len(done) == len(all_clips):
             result["status"] = "ok"
         elif done:
-            result["status"] = "delvis"
+            result["status"] = "partial"
         else:
-            result["status"] = "feil"
+            result["status"] = "failed"
             result["error"] = (
-                "csdm kjørte, men ingen klipp ble produsert. Typiske årsaker: "
-                "demoen er fra en eldre CS2-versjon (avspilling nektes), eller "
-                "HLAE brakk etter en spilloppdatering."
+                "csdm ran, but no clips were produced. Typical causes: "
+                "the demo is from an older CS2 version (playback refused), or "
+                "HLAE broke after a game update."
             )
-        log(f"jobb {run_id}: {result['status']} ({len(done)}/{len(all_clips)} klipp)", job_dir)
+        log(f"job {run_id}: {result['status']} ({len(done)}/{len(all_clips)} clips)", job_dir)
         working.unlink(missing_ok=True)
         for cp in config_paths:
             cp.unlink(missing_ok=True)
         return True
 
-    except Exception as exc:  # noqa: BLE001 — alt skal i result-fila
+    except Exception as exc:  # noqa: BLE001 — everything goes into the result file
         result["error"] = str(exc)
-        log(f"FEIL i jobb {run_id}: {exc}", job_dir)
+        log(f"ERROR in job {run_id}: {exc}", job_dir)
         return False
     finally:
         result_path.parent.mkdir(parents=True, exist_ok=True)
@@ -296,28 +296,30 @@ def process_job(job_path: Path, job_dir: Path, csdm: Path) -> bool:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--job-dir", required=True, help="Jobbkø-mappe (delt/lokal)")
-    ap.add_argument("--csdm", default=str(DEFAULT_CSDM), help="Sti til csdm.exe")
-    ap.add_argument("--once", action="store_true", help="Prosesser én jobb og avslutt")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument("--job-dir", required=True, help="Job queue folder (shared or local)")
+    ap.add_argument("--csdm", default=str(DEFAULT_CSDM), help="Path to csdm.cmd/csdm.exe")
+    ap.add_argument("--once", action="store_true", help="Process one job and exit")
     args = ap.parse_args()
 
     job_dir = Path(args.job_dir)
     csdm = Path(args.csdm)
     if not csdm.exists():
-        print(f"FEIL: finner ikke csdm.exe på {csdm} — bruk --csdm <sti>")
+        print(f"ERROR: cannot find csdm at {csdm} — use --csdm <path>")
         return 1
     for sub in ("demos", "inbox", "working", "outbox"):
         (job_dir / sub).mkdir(parents=True, exist_ok=True)
 
-    # Gjenoppta jobber som ble stående i working/ etter krasj
+    # Resume jobs left in working/ after a crash
     for stuck in (job_dir / "working").glob("*.json"):
-        # csdm-config-filer (én per render-pass, P20) er ikke jobber
+        # csdm config files (one per render pass) are not jobs
         if ".csdm-config" not in stuck.name:
-            log(f"flytter avbrutt jobb tilbake til inbox: {stuck.name}", job_dir)
+            log(f"moving interrupted job back to inbox: {stuck.name}", job_dir)
             shutil.move(stuck, job_dir / "inbox" / stuck.name)
 
-    log(f"worker startet — venter på jobber i {job_dir / 'inbox'}", job_dir)
+    log(f"worker started — waiting for jobs in {job_dir / 'inbox'}", job_dir)
     consecutive_failures = 0
     while True:
         jobs = sorted((job_dir / "inbox").glob("*.json"))
@@ -326,8 +328,8 @@ def main() -> int:
             consecutive_failures = 0 if ok else consecutive_failures + 1
             if consecutive_failures >= 2:
                 log(
-                    "STOPPER: 2 jobbfeil på rad. Sjekk om en spilloppdatering "
-                    "har brukket HLAE (oppdater CS Demo Manager), se worker.log.",
+                    "STOPPING: 2 job failures in a row. Check whether a game update "
+                    "broke HLAE (update CS Demo Manager), see worker.log.",
                     job_dir,
                 )
                 return 1
@@ -335,7 +337,7 @@ def main() -> int:
                 return 0 if ok else 1
         else:
             if args.once:
-                log("ingen jobber i køen.", job_dir)
+                log("no jobs in the queue.", job_dir)
                 return 0
             time.sleep(POLL_SECONDS)
 

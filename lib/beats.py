@@ -76,7 +76,7 @@ def analyze_beats(track_path: str | Path) -> dict:
 
     track_path = Path(track_path)
     if not track_path.exists():
-        raise FileNotFoundError(f"Finner ikke musikkspor: {track_path}")
+        raise FileNotFoundError(f"Cannot find music track: {track_path}")
 
     y, sr = librosa.load(str(track_path), sr=22050, mono=True)
     tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, trim=False)

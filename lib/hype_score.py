@@ -33,15 +33,15 @@ def build_candidates(
         pov_candidates = [player_override]
         if player_override not in present:
             flags.append(
-                f"--player {player_override} har ingen kills i demoen — "
-                f"sannsynlig feil steamid?"
+                f"--player {player_override} has no kills in the demo — "
+                f"wrong SteamID?"
             )
     else:
         pov_candidates = [p for p in known if p in present]
         if not pov_candidates:
             flags.append(
-                "Ingen av known_players fra config.toml er i demoen — "
-                "vurderer alle spillere i stedet. Sjekk kontoliste."
+                "None of the known_players from config.toml are in the demo — "
+                "considering all players instead. Check your account list."
             )
             pov_candidates = sorted(present)
 
@@ -60,9 +60,9 @@ def build_candidates(
     if len(pov_candidates) > 1 and not player_override:
         others = [p for p in pov_candidates if p != best_pov]
         flags.append(
-            f"Flere kjente kontoer i demoen ({len(pov_candidates)}); valgte "
-            f"{_name_of(best_pov, events)} ({best_pov}) på høyest hype-score. "
-            f"Andre: {', '.join(others)}"
+            f"Several known accounts in the demo ({len(pov_candidates)}); picked "
+            f"{_name_of(best_pov, events)} ({best_pov}) by highest hype score. "
+            f"Others: {', '.join(others)}"
         )
 
     # --- Cap: behold ALLTID 3k+ og vunnede clutcher ----------------------
@@ -78,15 +78,15 @@ def build_candidates(
         dropped = len(kept) - max_candidates
         kept = kept[:max_candidates]
         flags.append(
-            f"{dropped} kandidat(er) under cap på {max_candidates} droppet "
-            f"(laveste score, ingen 3k+/clutch)."
+            f"{dropped} candidate(s) dropped by the cap of {max_candidates} "
+            f"(lowest score, no 3k+/clutch)."
         )
     kept.sort(key=lambda c: c.hype_score, reverse=True)
 
     if not kept:
         flags.append(
-            f"0 kandidatklipp for {best_pov} — for få kills eller for "
-            f"strenge regler?"
+            f"0 candidate clips for {best_pov} — too few kills or too "
+            f"strict rules?"
         )
     return kept, flags, best_pov
 

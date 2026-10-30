@@ -1,10 +1,9 @@
 """Fragsmith — CS2 .dem → fragmovie.
 
-Bruk:
-    python main.py run <demo.dem> [--player <steamid64>] [--music <fil|mappe>]
-
-Fase (a): kjører steg 0-2 (learnings, parsing, hype-scoring) og stopper med
-kandidatliste. Steg 3+ (Director, rendering, editing) kommer i fase b-f.
+Workflow:
+    python main.py run <demo.dem>      steps 0-3, stops at the edit plan
+    python main.py render runs/<id>    step 4, sends the render job (approval)
+    python main.py finish runs/<id>    steps 5-7, creates final.mp4
 """
 from __future__ import annotations
 
@@ -23,7 +22,7 @@ from lib.parse_demo import DemoParseError, parse_demo  # noqa: E402
 
 
 def load_dotenv() -> None:
-    """Enkel .env-laster (KEY=VALUE per linje); setter ikke over eksisterende."""
+    """Minimal .env loader (KEY=VALUE per line); never overrides existing vars."""
     env_path = PROJECT_DIR / ".env"
     if not env_path.exists():
         return
@@ -37,14 +36,14 @@ def load_dotenv() -> None:
 
 
 def read_learnings() -> None:
-    """Steg 0: les learnings_runtime.md FØR alt annet (fast regel)."""
+    """Step 0: read learnings_runtime.md BEFORE anything else (fixed rule)."""
     path = PROJECT_DIR / "learnings_runtime.md"
     if not path.exists():
-        print("ADVARSEL: learnings_runtime.md mangler!")
+        print("WARNING: learnings_runtime.md is missing!")
         return
     lines = path.read_text(encoding="utf-8").splitlines()
     entries = [l for l in lines if l.startswith("- 20")]
-    print(f"Steg 0: leste learnings_runtime.md ({len(entries)} læringspunkt)")
+    print(f"Step 0: read learnings_runtime.md ({len(entries)} entries)")
     for entry in entries:
         print(f"    {entry}")
 
@@ -52,20 +51,20 @@ def read_learnings() -> None:
 def load_config() -> dict:
     path = PROJECT_DIR / "config.toml"
     if not path.exists():
-        print(f"FEIL: finner ikke {path}")
-        print("Kopier config.example.toml til config.toml og fyll inn dine verdier.")
+        print(f"ERROR: cannot find {path}")
+        print("Copy config.example.toml to config.toml and fill in your values.")
         sys.exit(1)
     with open(path, "rb") as fh:
         return tomllib.load(fh)
 
 
 def _resolve_demo(path_arg: str) -> Path:
-    """Godta .dem eller .dem.bz2 (Valve MM lagrer bz2) — pakk ut ved behov."""
+    """Accept .dem or .dem.bz2 (Valve MM stores bz2) — extract if needed."""
     demo = Path(path_arg)
     if demo.suffix == ".bz2":
         target = demo.with_suffix("")
         if not target.exists():
-            print(f"Pakker ut {demo.name} ...")
+            print(f"Extracting {demo.name} ...")
             import bz2
             import shutil
 
@@ -83,14 +82,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     run_id = f"{demo.stem}-{datetime.now():%Y%m%d-%H%M%S}"
     run_dir = PROJECT_DIR / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Kjøring: runs/{run_id}/")
+    print(f"Run: runs/{run_id}/")
 
-    # --- Steg 1: parse demo ---------------------------------------------
-    print(f"Steg 1: parser {demo.name} ...")
+    # --- Step 1: parse demo ----------------------------------------------
+    print(f"Step 1: parsing {demo.name} ...")
     try:
         events = parse_demo(demo)
     except DemoParseError as exc:
-        print(f"STOPP i steg 1: {exc}")
+        print(f"STOPPED in step 1: {exc}")
         (run_dir / "error.json").write_text(
             json.dumps({"step": 1, "error": str(exc)}, indent=2), encoding="utf-8"
         )
@@ -100,13 +99,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         json.dumps(events, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     print(
-        f"    kart: {events['map'] or 'ukjent'} | "
-        f"{len(events['rounds'])} runder | {len(events['kills'])} kills | "
-        f"{len(events['players'])} spillere"
+        f"    map: {events['map'] or 'unknown'} | "
+        f"{len(events['rounds'])} rounds | {len(events['kills'])} kills | "
+        f"{len(events['players'])} players"
     )
 
-    # --- Steg 2: hype-scoring ---------------------------------------------
-    print("Steg 2: hype-scoring ...")
+    # --- Step 2: hype scoring ---------------------------------------------
+    print("Step 2: hype scoring ...")
     candidates, flags, pov = build_candidates(events, cfg, args.player)
     (run_dir / "01-candidates.json").write_text(
         json.dumps(
@@ -125,8 +124,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         (p["name"] for p in events["players"] if p["steamid"] == pov), pov
     )
     print(f"    POV: {pov_name} ({pov})")
-    print(f"    {len(candidates)} kandidatklipp:")
-    print(f"    {'klipp':<22} {'type':<17} {'kills':>5} {'score':>6} {'sek':>6}")
+    print(f"    {len(candidates)} candidate clips:")
+    print(f"    {'clip':<22} {'type':<17} {'kills':>5} {'score':>6} {'sec':>6}")
     for c in candidates:
         print(
             f"    {c.clip_id:<22} {c.kind:<17} {c.kill_count:>5} "
@@ -134,15 +133,15 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
 
     if flags:
-        print("Flagg:")
+        print("Flags:")
         for f in flags:
             print(f"    ! {f}")
 
     if not candidates:
-        print("Ingen kandidatklipp — stopper her (ingenting å lage film av).")
+        print("No candidate clips — stopping here (nothing to make a film from).")
         return 0
 
-    # --- Steg 3: AI Director ---------------------------------------------
+    # --- Step 3: AI Director ---------------------------------------------
     import os
 
     from lib.director import DirectorError, list_music_files, run_director
@@ -150,8 +149,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     load_dotenv()
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print(
-            "STOPP før steg 3: ANTHROPIC_API_KEY mangler. "
-            "Lim nøkkelen inn i .env-fila i prosjektmappa."
+            "STOPPED before step 3: ANTHROPIC_API_KEY is missing. "
+            "Put the key in a .env file in the project folder."
         )
         return 1
 
@@ -159,13 +158,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     music_files = list_music_files(music_dir)
     if not music_files:
         print(
-            f"STOPP før steg 3: ingen musikkfiler funnet i '{music_dir}'. "
-            f"Legg mp3/wav/flac der, eller pek med --music."
+            f"STOPPED before step 3: no music files found in '{music_dir}'. "
+            f"Put mp3/wav/flac files there, or point to them with --music."
         )
         return 1
 
     dcfg = cfg.get("director", {})
-    print(f"Steg 3: AI Director ({dcfg.get('model', 'claude-opus-4-8')}) ...")
+    print(f"Step 3: AI Director ({dcfg.get('model', 'claude-opus-4-8')}) ...")
     try:
         plan = run_director(
             candidates=candidates,
@@ -177,7 +176,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             max_retries=int(dcfg.get("max_retries", 3)),
         )
     except DirectorError as exc:
-        print(f"STOPP i steg 3: {exc}")
+        print(f"STOPPED in step 3: {exc}")
         (run_dir / "error.json").write_text(
             json.dumps({"step": 3, "error": str(exc)}, indent=2), encoding="utf-8"
         )
@@ -187,14 +186,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         plan.model_dump_json(indent=2), encoding="utf-8"
     )
 
-    # --- FASESTOPP: vis edit-plan + estimater, vent på godkjenning ---------
+    # --- PHASE STOP: show edit plan + estimates, wait for approval ---------
     from lib.edit_engine import pick_replay_clip, wants_high_fps
 
     by_id = {c.clip_id: c for c in candidates}
     chosen = sorted(plan.decisions, key=lambda d: d.order)
     total_sec = sum(by_id[d.clip_id].duration_seconds for d in chosen)
 
-    # P20: klipp med slow-mo rendres i høy fps — samme utvalg som steg 4 gjør
+    # Slow-mo clips are rendered at high fps — same selection as step 4 makes
     fx = cfg.get("effects", {})
     base_fps = int(cfg.get("video", {}).get("framerate", 60))
     high_fps = int(cfg.get("render", {}).get("highfps_framerate", 0))
@@ -210,9 +209,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     }
     high_sec = sum(by_id[cid].duration_seconds for cid in highfps_ids)
 
-    # Grove estimat: rendering ~2x sanntid + oppstart; råklipp ~40 MB/min
-    # 1080p60. Høy-fps-klipp skalerer ~lineært med fps (flere frames), og
-    # to pass betyr én ekstra CS2-oppstart (~2 min).
+    # Rough estimates: rendering ~2x real time + startup; raw clips ~40 MB/min
+    # at 1080p60. High-fps clips scale ~linearly with fps (more frames), and
+    # two passes means one extra CS2 launch (~2 min).
     fps_scale = high_fps / base_fps if high_fps else 1.0
     est_render_min = (
         total_sec * 2 + high_sec * 2 * (fps_scale - 1)
@@ -222,10 +221,10 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     print()
     print("=" * 64)
-    print("EDIT-PLAN (fasestopp — rendering krever godkjenning)")
-    print(f"  Musikk: {plan.music_track}")
-    print(f"  Intro:  {plan.intro_text}   Outro: {plan.outro_text}")
-    print(f"  {'#':>2} {'klipp':<22} {'score':>6} {'sek':>6}  overlay/slow-mo")
+    print("EDIT PLAN (phase stop — rendering requires your approval)")
+    print(f"  Music: {plan.music_track}")
+    print(f"  Intro: {plan.intro_text}   Outro: {plan.outro_text}")
+    print(f"  {'#':>2} {'clip':<22} {'score':>6} {'sec':>6}  overlay/slow-mo")
     for d in chosen:
         c = by_id[d.clip_id]
         extras = []
@@ -234,33 +233,33 @@ def cmd_run(args: argparse.Namespace) -> int:
         if d.slowmo_segments:
             extras.append(f"{len(d.slowmo_segments)} slow-mo")
         if d.clip_id in highfps_ids:
-            extras.append(f"{high_fps} fps (P20)")
+            extras.append(f"{high_fps} fps")
         print(
             f"  {d.order:>2} {d.clip_id:<22} {c.hype_score:>6.2f} "
             f"{c.duration_seconds:>6.1f}  {', '.join(extras)}"
         )
     if plan.dropped_clip_ids:
-        print(f"  Droppet: {', '.join(plan.dropped_clip_ids)}")
+        print(f"  Dropped: {', '.join(plan.dropped_clip_ids)}")
     if highfps_ids:
         print(
-            f"  P20: {len(highfps_ids)} klipp rendres i {high_fps} fps "
-            f"(ekte smooth slow-mo) — rendering går i 2 pass."
+            f"  {len(highfps_ids)} clip(s) rendered at {high_fps} fps "
+            f"(real smooth slow-mo) — rendering runs in 2 passes."
         )
     print(
-        f"  Total klippetid: {total_sec:.0f} s | grovt estimat rendering: "
-        f"~{est_render_min:.0f} min | råklipp-disk: ~{est_disk_mb:.0f} MB"
+        f"  Total clip time: {total_sec:.0f} s | rough render estimate: "
+        f"~{est_render_min:.0f} min | raw clip disk: ~{est_disk_mb:.0f} MB"
     )
     print("=" * 64)
-    print("Begrunnelser per klipp ligger i 02-edit-plan.json (reasoning).")
-    print("Rendering (steg 4) kjøres på render-PC-en — kommer i fase (c).")
+    print("Reasoning per clip is in 02-edit-plan.json (reasoning).")
+    print(f"Approve and render: python main.py render runs/{run_id}")
     return 0
 
 
 def cmd_render(args: argparse.Namespace) -> int:
-    """Steg 4: send render-jobb til worker på render-PC-en.
+    """Step 4: send the render job to the worker.
 
-    Å kjøre denne kommandoen ER godkjenningen fra fasestoppet — den legger
-    jobben i køen som starter CS2-rendering på render-PC-en.
+    Running this command IS the approval from the phase stop — it queues the
+    job that starts CS2 rendering.
     """
     read_learnings()
     cfg = load_config()
@@ -271,7 +270,7 @@ def cmd_render(args: argparse.Namespace) -> int:
     run_id = run_dir.name
     plan_path = run_dir / "02-edit-plan.json"
     if not plan_path.exists():
-        print(f"FEIL: finner ikke {plan_path} — kjør 'run' først.")
+        print(f"ERROR: cannot find {plan_path} — run 'run' first.")
         return 1
 
     from lib.models import EditPlan, Highlight
@@ -293,68 +292,67 @@ def cmd_render(args: argparse.Namespace) -> int:
     high = [c for c in job["clips"] if c.get("framerate")]
     if high:
         print(
-            f"P20: {len(high)} klipp rendres i {high[0]['framerate']} fps "
-            f"({', '.join(c['clip_id'] for c in high)}) — workeren kjører "
-            f"2 render-pass (én ekstra CS2-oppstart)."
+            f"{len(high)} clip(s) rendered at {high[0]['framerate']} fps "
+            f"({', '.join(c['clip_id'] for c in high)}) — the worker runs "
+            f"2 render passes (one extra CS2 launch)."
         )
     n_alt = sum(1 for c in job["clips"] if c.get("alt_pov_steamid"))
     if n_alt:
         alt = next(c for c in job["clips"] if c.get("alt_pov_steamid"))
         print(
-            f"P19: {alt['clip_id']} får EKSTRA offer-POV-sekvens "
-            f"({alt.get('alt_pov_name', '?')}) for instant replay — "
-            f"litt mer render-tid og disk."
+            f"Instant replay: {alt['clip_id']} gets an EXTRA victim-POV sequence "
+            f"({alt.get('alt_pov_name', '?')}) — a bit more render time and disk."
         )
 
     demo_path = Path(plan.demo_path)
     if not demo_path.exists():
-        print(f"FEIL: finner ikke demofila {demo_path} (trengs for kopiering).")
+        print(f"ERROR: cannot find the demo file {demo_path} (needed for copying).")
         return 1
 
     render_cfg = cfg.get("render", {})
     if render_cfg.get("ssh_host"):
         from lib.render_clips import SshError, submit_job_ssh
 
-        print(f"Sender jobb via SSH til {render_cfg['ssh_host']} ...")
+        print(f"Sending job via SSH to {render_cfg['ssh_host']} ...")
         try:
             job_ref = submit_job_ssh(job, demo_path, render_cfg)
         except SshError as exc:
-            print(f"STOPP: {exc}")
+            print(f"STOPPED: {exc}")
             return 1
-        print(f"Jobb lagt i kø: {job_ref}")
-        print(f"{len(job['clips']) + n_alt} sekvenser renderes når workeren plukker jobben.")
-        print("Start workeren på render-PC-en hvis den ikke kjører "
-              "(dobbeltklikk C:\\fragsmith-jobs\\start-worker.cmd).")
-        print(f"Når ferdig: python main.py finish {args.run_dir}")
+        print(f"Job queued: {job_ref}")
+        print(f"{len(job['clips']) + n_alt} sequences will render when the worker picks up the job.")
+        print("Start the worker on the render PC if it isn't running "
+              "(python worker.py --job-dir <job folder>).")
+        print(f"When done: python main.py finish {args.run_dir}")
         return 0
 
     job_dir_cfg = render_cfg.get("job_dir", "")
     if not job_dir_cfg:
-        # Ingen delt mappe konfigurert — skriv jobben lokalt for manuell (USB-)flytting
+        # No job folder configured — write the job locally for manual (USB) transfer
         job_path = run_dir / f"{run_id}.render-job.json"
         job_path.write_text(
             json.dumps(job, indent=2, ensure_ascii=False), encoding="utf-8"
         )
-        print(f"Jobbfil skrevet: {job_path}")
-        print("render.job_dir er ikke satt i config.toml — manuell overføring:")
-        print(f"  1. Kopier jobbfila til <jobbmappe>/inbox/ på render-PC-en")
-        print(f"  2. Kopier {demo_path.name} til <jobbmappe>/demos/")
-        print(f"  3. Kjør worker.py der: python worker.py --job-dir <jobbmappe>")
-        print(f"  4. Kopier <jobbmappe>/outbox/{run_id}/ hit som 03-raw-clips/")
+        print(f"Job file written: {job_path}")
+        print("render.job_dir is not set in config.toml — manual transfer:")
+        print(f"  1. Copy the job file to <job folder>/inbox/ on the render PC")
+        print(f"  2. Copy {demo_path.name} to <job folder>/demos/")
+        print(f"  3. Run the worker there: python worker.py --job-dir <job folder>")
+        print(f"  4. Copy <job folder>/outbox/{run_id}/ back here as 03-raw-clips/")
         return 0
 
     job_dir = Path(job_dir_cfg)
-    print(f"Sender jobb til kø: {job_dir}")
+    print(f"Sending job to queue: {job_dir}")
     job_path = submit_job(job, demo_path, job_dir)
-    print(f"Jobb lagt i kø: {job_path}")
-    print(f"{len(job['clips']) + n_alt} sekvenser renderes når workeren plukker jobben.")
-    print(f"Når ferdig: python main.py finish {args.run_dir}")
+    print(f"Job queued: {job_path}")
+    print(f"{len(job['clips']) + n_alt} sequences will render when the worker picks up the job.")
+    print(f"When done: python main.py finish {args.run_dir}")
     return 0
 
 
 def cmd_finish(args: argparse.Namespace) -> int:
-    """Steg 5-7: beats + editing + assembly. Krever råklipp (steg 4) i
-    <run-dir>/03-raw-clips/ (eller --clips)."""
+    """Steps 5-7: beats + editing + assembly. Requires raw clips (step 4) in
+    <run-dir>/03-raw-clips/ (or --clips)."""
     read_learnings()
     cfg = load_config()
 
@@ -364,7 +362,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
     plan_path = run_dir / "02-edit-plan.json"
     cand_path = run_dir / "01-candidates.json"
     if not plan_path.exists():
-        print(f"FEIL: finner ikke {plan_path} — kjør 'run' først.")
+        print(f"ERROR: cannot find {plan_path} — run 'run' first.")
         return 1
 
     from lib.assemble import assemble, build_intro_hook, write_report
@@ -375,13 +373,13 @@ def cmd_finish(args: argparse.Namespace) -> int:
 
     plan = EditPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
     if args.music:
-        plan.music_track = args.music  # overstyr Directors musikkvalg
+        plan.music_track = args.music  # override the Director's music choice
     cand_data = json.loads(cand_path.read_text(encoding="utf-8"))
     candidates_by_id = {
         c["clip_id"]: Highlight.model_validate(c) for c in cand_data["candidates"]
     }
 
-    # Demo-kontekst for P7 (kart i lowerthird) og P13 (stats-outro)
+    # Demo context for the lower third (map) and the stats outro
     events: dict = {}
     events_path = run_dir / "00-events.json"
     if events_path.exists():
@@ -390,7 +388,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
     clips_dir = Path(args.clips) if args.clips else run_dir / "03-raw-clips"
     if not clips_dir.is_dir() or not any(clips_dir.glob("*.mp4")):
         render_cfg = cfg.get("render", {})
-        # Hent automatisk via SSH hvis konfigurert
+        # Fetch automatically via SSH if configured
         if render_cfg.get("ssh_host"):
             from lib.render_clips import collect_clips_ssh
 
@@ -398,18 +396,18 @@ def cmd_finish(args: argparse.Namespace) -> int:
                 run_dir.name, render_cfg, run_dir / "03-raw-clips"
             )
             if copied:
-                print(f"Hentet {copied} råklipp fra render-PC-en via SSH.")
+                print(f"Fetched {copied} raw clips from the render PC via SSH.")
                 clips_dir = run_dir / "03-raw-clips"
                 for w in result.get("warnings", []):
-                    print(f"    ! worker-advarsel: {w}")
+                    print(f"    ! worker warning: {w}")
             elif result:
                 print(
-                    f"Render-jobben har status '{result.get('status')}'"
+                    f"The render job has status '{result.get('status')}'"
                     + (f": {result.get('error')}" if result.get("error") else "")
                 )
             else:
-                print("Ingen result.json fra workeren ennå — jobben er ikke ferdig.")
-        # Ellers: hent fra delt/lokal jobbmappe hvis konfigurert
+                print("No result.json from the worker yet — the job isn't finished.")
+        # Otherwise: fetch from the shared/local job folder if configured
         job_dir_cfg = render_cfg.get("job_dir", "")
         if job_dir_cfg and (not clips_dir.is_dir() or not any(clips_dir.glob("*.mp4"))):
             from lib.render_clips import collect_clips
@@ -418,19 +416,19 @@ def cmd_finish(args: argparse.Namespace) -> int:
                 run_dir.name, Path(job_dir_cfg), run_dir / "03-raw-clips"
             )
             if copied:
-                print(f"Hentet {copied} råklipp fra render-køens outbox.")
+                print(f"Fetched {copied} raw clips from the render queue's outbox.")
                 clips_dir = run_dir / "03-raw-clips"
                 for w in result.get("warnings", []):
-                    print(f"    ! worker-advarsel: {w}")
+                    print(f"    ! worker warning: {w}")
             elif result:
                 print(
-                    f"Render-jobben har status '{result.get('status')}'"
+                    f"The render job has status '{result.get('status')}'"
                     + (f": {result.get('error')}" if result.get("error") else "")
                 )
     if not clips_dir.is_dir() or not any(clips_dir.glob("*.mp4")):
         print(
-            f"FEIL: ingen råklipp i {clips_dir}. Kjør 'render' og vent på "
-            f"workeren, eller pek med --clips."
+            f"ERROR: no raw clips in {clips_dir}. Run 'render' and wait for "
+            f"the worker, or point to them with --clips."
         )
         return 1
 
@@ -439,12 +437,12 @@ def cmd_finish(args: argparse.Namespace) -> int:
     if not music_path.is_absolute():
         music_path = music_dir / plan.music_track
     if not music_path.exists():
-        print(f"FEIL: finner ikke musikkspor: {music_path}")
+        print(f"ERROR: cannot find music track: {music_path}")
         return 1
 
     log_path = run_dir / "ffmpeg.log"
 
-    print(f"Steg 5: beat-analyse av {music_path.name} ...")
+    print(f"Step 5: beat analysis of {music_path.name} ...")
     beats = analyze_beats(music_path)
     (run_dir / "05-beats.json").write_text(
         json.dumps(beats, indent=2), encoding="utf-8"
@@ -452,11 +450,11 @@ def cmd_finish(args: argparse.Namespace) -> int:
     print(f"    {beats['bpm']} BPM, {len(beats['beat_times'])} beats")
     if beats.get("drops"):
         drop_str = ", ".join(f"{d['time_s']:.1f}s" for d in beats["drops"])
-        print(f"    drops funnet: {drop_str} (sterkest først)")
+        print(f"    drops found: {drop_str} (strongest first)")
 
-    # Cold open-glimtene ligger FØR introen på tidslinja — de må bygges nå
-    # så steg 6 vet hvor segmentene faktisk starter (beat-sync-bug fikset
-    # 2026-07-07; glimtene ble før ikke regnet med).
+    # The cold open glimpses sit BEFORE the intro on the timeline — they must
+    # be built now so step 6 knows where the segments actually start
+    # (otherwise beat sync drifts by the length of the cold open).
     work_dir = run_dir / "04-segments"
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -464,11 +462,11 @@ def cmd_finish(args: argparse.Namespace) -> int:
             plan, candidates_by_id, clips_dir, work_dir, cfg, log_path
         )
     except FfmpegError as exc:
-        print(f"STOPP i steg 6 (cold open): {exc}")
+        print(f"STOPPED in step 6 (cold open): {exc}")
         return 1
     hook_s = sum(probe_duration(h) for h in hooks)
 
-    # P21: legg klimaks-klippet på musikkens drop hvis mulig
+    # Drop sync: place the climax clip on the music's drop if possible
     editing = cfg.get("editing", {})
     intro_s = float(editing.get("intro_seconds", 2.5))
     music_offset = 0.0
@@ -481,23 +479,23 @@ def cmd_finish(args: argparse.Namespace) -> int:
         intro_s = drop_info["intro_seconds"]
         music_offset = drop_info["music_offset"]
         method = (
-            f"intro-kortet justert til {intro_s:.1f} s"
+            f"intro card adjusted to {intro_s:.1f} s"
             if drop_info["method"] == "intro"
-            else f"musikken starter {music_offset:.1f} s ut i sporet"
+            else f"music starts {music_offset:.1f} s into the track"
         )
         print(
-            f"    P21: klimaks ({drop_info['climax_clip_id']}) legges på "
-            f"droppet ved {drop_info['drop_track_s']:.1f} s — {method}"
+            f"    Drop sync: climax ({drop_info['climax_clip_id']}) placed on "
+            f"the drop at {drop_info['drop_track_s']:.1f} s — {method}"
         )
     elif editing.get("drop_sync", False):
         why = (
-            "ingen drop-kandidat kunne treffes"
+            "no drop candidate could be reached"
             if beats.get("drops")
-            else "ingen tydelig drop i sporet"
+            else "no clear drop in the track"
         )
-        print(f"    P21: {why} — klimaks-til-slutt som før.")
+        print(f"    Drop sync: {why} — climax at the end instead.")
 
-    print("Steg 6: editing engine (slow-mo, overlays, beat-justering) ...")
+    print("Step 6: editing engine (slow-mo, overlays, beat alignment) ...")
     try:
         segments, cut_log, flags = build_segments(
             plan, candidates_by_id, clips_dir,
@@ -506,14 +504,14 @@ def cmd_finish(args: argparse.Namespace) -> int:
             timeline_start=hook_s + intro_s,
         )
     except FfmpegError as exc:
-        print(f"STOPP i steg 6: {exc}")
+        print(f"STOPPED in step 6: {exc}")
         return 1
     if not segments:
-        print("STOPP: ingen segmenter kunne bygges (mangler alle råklipp?).")
+        print("STOPPED: no segments could be built (are all raw clips missing?).")
         return 1
-    print(f"    {len(segments)} segmenter bygd")
+    print(f"    {len(segments)} segments built")
 
-    # P21: mål FAKTISK avvik mot droppet (encoding gir frame-granularitet)
+    # Drop sync: measure the ACTUAL offset from the drop (encoding is frame-granular)
     if drop_info:
         entry = next(
             (c for c in cut_log if c["clip_id"] == drop_info["climax_clip_id"]),
@@ -525,13 +523,13 @@ def cmd_finish(args: argparse.Namespace) -> int:
                 (actual_start - drop_info["drop_timeline_s"]) * 1000
             )
             drop_info["actual_error_ms"] = err_ms
-            print(f"    P21: klimaks lander {err_ms:+d} ms fra droppet")
+            print(f"    Drop sync: climax lands {err_ms:+d} ms from the drop")
         beats_used = dict(beats_used)
         beats_used["drop_sync"] = {
             k: v for k, v in drop_info.items() if k != "beats"
         }
 
-    print("Steg 7: assembly (intro, musikk-miks, eksport) ...")
+    print("Step 7: assembly (intro, music mix, export) ...")
     try:
         final = assemble(
             plan, segments, music_path, run_dir, cfg, log_path,
@@ -541,7 +539,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
             music_offset=music_offset,
         )
     except FfmpegError as exc:
-        print(f"STOPP i steg 7: {exc}")
+        print(f"STOPPED in step 7: {exc}")
         return 1
 
     report = write_report(
@@ -550,26 +548,27 @@ def cmd_finish(args: argparse.Namespace) -> int:
     )
 
     if flags:
-        print("Flagg:")
+        print("Flags:")
         for f in flags:
             print(f"    ! {f}")
     print()
-    print(f"FERDIG: {final}")
-    print(f"Rapport: {report}")
-    print("Råklipp beholdes til du har sett filmen — slett med --cleanup senere.")
+    print(f"DONE: {final}")
+    print(f"Report: {report}")
+    print(f"Raw clips are kept until you've watched the film — "
+          f"delete them with: python main.py cleanup {args.run_dir}")
     return 0
 
 
 def cmd_batch(args: argparse.Namespace) -> int:
-    """Fase f: prosesser alle demoer i en mappe sekvensielt (steg 0-3).
+    """Process every demo in a folder sequentially (steps 0-3).
 
-    processed.json husker hva som er kjørt, så batch kan gjenopptas uten
-    dobbeltarbeid. Rendering skjer ALDRI parallelt — worker på render-PC-en
-    tar jobbene sekvensielt (fase c).
+    processed.json remembers what has been run, so a batch can be resumed
+    without duplicate work. Rendering NEVER happens in parallel — the worker
+    takes jobs one at a time.
     """
     folder = Path(args.folder)
     if not folder.is_dir():
-        print(f"FEIL: {folder} er ikke en mappe.")
+        print(f"ERROR: {folder} is not a folder.")
         return 1
 
     processed_path = PROJECT_DIR / "processed.json"
@@ -577,7 +576,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
     if processed_path.exists():
         processed = json.loads(processed_path.read_text(encoding="utf-8"))
 
-    # .dem foretrekkes; .bz2 tas med der .dem ikke alt er pakket ut
+    # .dem is preferred; .bz2 is included where the .dem isn't extracted yet
     demos: dict[str, Path] = {}
     for f in sorted(folder.iterdir()):
         if f.suffix == ".dem":
@@ -586,7 +585,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
             demos.setdefault(f.name[: -len(".dem.bz2")], f)
 
     todo = {k: v for k, v in demos.items() if args.force or k not in processed}
-    print(f"Batch: {len(demos)} demoer funnet, {len(todo)} uprosesserte.")
+    print(f"Batch: {len(demos)} demos found, {len(todo)} unprocessed.")
 
     failed = 0
     for i, (stem, path) in enumerate(todo.items(), start=1):
@@ -596,7 +595,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
         )
         processed[stem] = {
             "demo": path.name,
-            "status": "ok" if code == 0 else "feil",
+            "status": "ok" if code == 0 else "failed",
             "processed_at": datetime.now().isoformat(timespec="seconds"),
         }
         processed_path.write_text(
@@ -604,14 +603,15 @@ def cmd_batch(args: argparse.Namespace) -> int:
         )
         failed += code != 0
 
-    print(f"\nBatch ferdig: {len(todo) - failed} ok, {failed} feilet.")
-    print("Neste: godkjenn edit-planene og render på render-PC-en (fase c).")
+    print(f"\nBatch done: {len(todo) - failed} ok, {failed} failed.")
+    print("Next: review the edit plans and render the ones you want "
+          "(python main.py render runs/<id>).")
     return 1 if failed else 0
 
 
 def cmd_cleanup(args: argparse.Namespace) -> int:
-    """Slett temp-filer (råklipp + segmenter) for en kjøring. Beholder
-    final.mp4, report.md og alle json-artefakter."""
+    """Delete temp files (raw clips + segments) for a run. Keeps
+    final.mp4, report.md and all json artifacts."""
     import shutil
 
     run_dir = Path(args.run_dir)
@@ -619,8 +619,8 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
         run_dir = PROJECT_DIR / run_dir
     if not (run_dir / "final.mp4").exists() and not args.force:
         print(
-            "STOPP: final.mp4 finnes ikke i denne kjøringen — sletting av "
-            "råklipp nå betyr ny rendering. Bruk --force hvis du er sikker."
+            "STOPPED: final.mp4 doesn't exist in this run — deleting the raw "
+            "clips now means rendering again. Use --force if you're sure."
         )
         return 1
     freed = 0
@@ -629,48 +629,52 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
         if target.is_dir():
             freed += sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
             shutil.rmtree(target)
-            print(f"Slettet {sub}/")
-    print(f"Frigjort ~{freed / 1e6:.0f} MB.")
+            print(f"Deleted {sub}/")
+    print(f"Freed ~{freed / 1e6:.0f} MB.")
     return 0
 
 
 def main() -> int:
-    # Windows-konsollen er ofte cp1252 — spillernavn kan være hva som helst
+    # The Windows console is often cp1252 — player names can be anything
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-    ap = argparse.ArgumentParser(prog="fragsmith", description=__doc__)
+    ap = argparse.ArgumentParser(
+        prog="fragsmith",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sub = ap.add_subparsers(dest="command", required=True)
 
-    run_p = sub.add_parser("run", help="Prosesser én demo")
-    run_p.add_argument("demo", help="Sti til .dem-fil")
-    run_p.add_argument("--player", help="SteamID64 for POV (overstyrer config)")
-    run_p.add_argument("--music", help="Musikkfil/-mappe (brukes fra fase d)")
+    run_p = sub.add_parser("run", help="Steps 0-3 for one demo: parse, score, edit plan")
+    run_p.add_argument("demo", help="Path to a .dem or .dem.bz2 file")
+    run_p.add_argument("--player", help="SteamID64 for the POV (overrides config)")
+    run_p.add_argument("--music", help="Music file or folder (overrides config)")
     run_p.set_defaults(func=cmd_run)
 
     ren_p = sub.add_parser(
         "render",
-        help="Steg 4: send render-jobb til worker (DETTE er godkjenningen)",
+        help="Step 4: send the render job to the worker (THIS is the approval)",
     )
-    ren_p.add_argument("run_dir", help="Sti til runs/<id>/ fra 'run'")
+    ren_p.add_argument("run_dir", help="Path to runs/<id>/ from 'run'")
     ren_p.set_defaults(func=cmd_render)
 
     fin_p = sub.add_parser(
-        "finish", help="Steg 5-7: beats + editing + assembly (krever råklipp)"
+        "finish", help="Steps 5-7: beats + editing + assembly (needs raw clips)"
     )
-    fin_p.add_argument("run_dir", help="Sti til runs/<id>/ fra 'run'")
-    fin_p.add_argument("--clips", help="Råklipp-mappe (default: <run-dir>/03-raw-clips)")
-    fin_p.add_argument("--music", help="Overstyr musikkvalg (filnavn i musikkmappa)")
+    fin_p.add_argument("run_dir", help="Path to runs/<id>/ from 'run'")
+    fin_p.add_argument("--clips", help="Raw clip folder (default: <run-dir>/03-raw-clips)")
+    fin_p.add_argument("--music", help="Override the music choice (file name in the music folder)")
     fin_p.set_defaults(func=cmd_finish)
 
-    batch_p = sub.add_parser("batch", help="Prosesser alle demoer i en mappe (steg 0-3)")
-    batch_p.add_argument("folder", help="Mappe med .dem/.dem.bz2-filer")
-    batch_p.add_argument("--player", help="SteamID64 for POV (overstyrer config)")
-    batch_p.add_argument("--force", action="store_true", help="Kjør også allerede prosesserte")
+    batch_p = sub.add_parser("batch", help="Process every demo in a folder (steps 0-3)")
+    batch_p.add_argument("folder", help="Folder with .dem/.dem.bz2 files")
+    batch_p.add_argument("--player", help="SteamID64 for the POV (overrides config)")
+    batch_p.add_argument("--force", action="store_true", help="Also re-run already processed demos")
     batch_p.set_defaults(func=cmd_batch)
 
-    clean_p = sub.add_parser("cleanup", help="Slett råklipp/segmenter for en kjøring")
-    clean_p.add_argument("run_dir", help="Sti til runs/<id>/")
-    clean_p.add_argument("--force", action="store_true", help="Slett selv uten final.mp4")
+    clean_p = sub.add_parser("cleanup", help="Delete raw clips/segments for a run")
+    clean_p.add_argument("run_dir", help="Path to runs/<id>/")
+    clean_p.add_argument("--force", action="store_true", help="Delete even without final.mp4")
     clean_p.set_defaults(func=cmd_cleanup)
 
     args = ap.parse_args()

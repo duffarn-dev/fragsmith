@@ -1,11 +1,11 @@
-"""Steg 3: AI Director — Claude velger endelige klipp, rekkefølge og pacing.
+"""Step 3: AI Director — Claude picks the final clips, order and pacing.
 
-Eneste LLM-steget i pipelinen. Structured output via messages.parse() +
-Pydantic (EditPlan). Ved validerings-/semantikkfeil: retry med feilmelding
-tilbake til modellen, maks 3 forsøk, deretter DirectorError.
+The only LLM step in the pipeline. Structured output via messages.parse() +
+Pydantic (EditPlan). On validation/semantic errors: retry with the error
+message sent back to the model, max 3 attempts, then DirectorError.
 
-Alt logges: prompt til runs/<id>/02-edit-plan.prompt.txt, plan (inkl.
-reasoning per klipp) til 02-edit-plan.json.
+Everything is logged: the prompt to runs/<id>/02-edit-plan.prompt.txt, the
+plan (incl. reasoning per clip) to 02-edit-plan.json.
 """
 from __future__ import annotations
 
@@ -20,47 +20,46 @@ MUSIC_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".m4a"}
 
 
 class DirectorError(RuntimeError):
-    """Director klarte ikke produsere en gyldig plan."""
+    """The Director couldn't produce a valid plan."""
 
 
 SYSTEM_PROMPT = """\
-Du er AI Director for Fragsmith — en autonom fragmovie-generator for CS2.
-Du får en liste kandidatklipp (med hype-score fra et regelbasert filter) og
-skal lage en redigeringsplan for en fragmovie på vegne av spilleren.
+You are the AI Director for Fragsmith — an autonomous fragmovie generator for CS2.
+You get a list of candidate clips (with a hype score from a rule-based filter)
+and must create an edit plan for a fragmovie on behalf of the player.
 
-Prinsipper for en god fragmovie:
-- Start sterkt (hook), bygg mot det sykeste klippet mot slutten (klimaks).
-- Varier pacing: ikke to lange klipp rett etter hverandre.
-- Slow-motion brukes SPARSOMT — kun på det mest spektakulære øyeblikket i et
-  klipp (siste kill i en ace, clutch-avslutningen). 0-2 segmenter per klipp.
-- Dropp kjedelige kandidater uten dårlig samvittighet — 4 gode klipp slår
-  8 middelmådige. Men: aces og høye clutcher (1v3+) skal praktisk talt alltid med.
-- Overlay-tekst kort og på engelsk gaming-sjargong ("3K", "1v4 CLUTCH",
-  "ACE") — null tekst på svakere klipp.
-- transition_in: "cut" er standard; "fade" kun inn i tempo-skifte;
-  "speed_ramp" der klippet starter i action.
-- intro_text/outro_text: kort og stilrent, på engelsk (f.eks. spillernavn +
-  kart, "GG" e.l.).
+Principles for a good fragmovie:
+- Start strong (hook), build toward the craziest clip near the end (climax).
+- Vary the pacing: no two long clips back to back.
+- Use slow motion SPARINGLY — only on the most spectacular moment of a clip
+  (the last kill of an ace, the end of a clutch). 0-2 segments per clip.
+- Drop boring candidates without guilt — 4 good clips beat 8 mediocre ones.
+  But: aces and big clutches (1v3+) should practically always be included.
+- Overlay text short and in gaming slang ("3K", "1v4 CLUTCH", "ACE") — no
+  text at all on weaker clips.
+- transition_in: "cut" is the default; "fade" only into a change of tempo;
+  "speed_ramp" where the clip starts in the action.
+- intro_text/outro_text: short and clean (e.g. player name + map, "GG" etc.).
 
-Effektstyring (P18 — valgfritt, per klipp):
-- is_climax: sett på maks ETT klipp — filmens høydepunkt. Det klippet får
-  ekstra tyngde (dutch tilt på siste kill). Utelater du det, regnes siste
-  klipp som klimaks. Sett det når høydepunktet IKKE ligger sist.
-- effects_on / effects_off: overstyr enkelteffekter der det løfter filmen:
-  "letterbox" (cinematisk ramme — standard kun på slow-mo/clutch),
-  "freeze" (freeze-frame på siste drap — standard kun på ace/4k),
-  "kill_zoom" (dyp zoom på siste kill — standard på),
-  "headshot_punch" (zoom-punch på headshots — standard på),
-  "impact_split" (RGB-blink på store drap — standard på),
-  "kill_counter" (kill-teller — standard på 3+ kills),
-  "replay" (instant replay: siste drap spoles tilbake og vises i slow-mo
-  fra OFFERETS synsvinkel — standard på klimaks-klippet hvis det har 3+
-  kills eller clutch; maks ETT klipp kan ha replay i effects_on).
-  Standardreglene er gode: bruk dette KUN med en konkret grunn (f.eks.
-  freeze på en 3k som avslutter filmen, letterbox av på et hektisk klipp,
-  replay på filmens sykeste enkeltdrap). Aldri tallparametre — kun valg.
+Effect control (optional, per clip):
+- is_climax: set on at most ONE clip — the film's high point. That clip gets
+  extra weight (dutch tilt on the last kill). If you leave it out, the last
+  clip counts as the climax. Set it when the high point is NOT last.
+- effects_on / effects_off: override individual effects where it lifts the film:
+  "letterbox" (cinematic bars — default only on slow-mo/clutch),
+  "freeze" (freeze frame on the last kill — default only on ace/4k),
+  "kill_zoom" (deep zoom on the last kill — default on),
+  "headshot_punch" (zoom punch on headshots — default on),
+  "impact_split" (RGB flicker on big kills — default on),
+  "kill_counter" (kill counter — default on for 3+ kills),
+  "replay" (instant replay: the last kill rewinds and is shown in slow-mo
+  from the VICTIM's point of view — default on the climax clip if it has 3+
+  kills or a clutch; at most ONE clip can have replay in effects_on).
+  The default rules are good: use this ONLY with a concrete reason (e.g.
+  freeze on a 3k that ends the film, letterbox off on a hectic clip, replay
+  on the film's single craziest kill). Never numeric parameters — only choices.
 
-Begrunn hvert valg kort i reasoning-feltet (norsk er fint der).
+Briefly justify each choice in the reasoning field.
 """
 
 
@@ -75,39 +74,39 @@ def _build_prompt(
     )
     rounds = events.get("rounds", [])
     return f"""\
-Lag en redigeringsplan (EditPlan) for denne demoen.
+Create an edit plan (EditPlan) for this demo.
 
-Kontekst:
-- Spiller (POV): {pov_name}
-- Kart: {events.get('map') or 'ukjent'}
-- Antall runder: {len(rounds)}
+Context:
+- Player (POV): {pov_name}
+- Map: {events.get('map') or 'unknown'}
+- Number of rounds: {len(rounds)}
 - Demo: {events.get('demo_path')}
 
-Kandidatklipp (fra regelbasert hype-scoring, 0-10):
+Candidate clips (from rule-based hype scoring, 0-10):
 {cand_json}
 
-Tilgjengelige musikkspor (velg ETT eksakt filnavn til music_track):
+Available music tracks (pick ONE exact file name for music_track):
 {json.dumps(music_files, indent=2, ensure_ascii=False)}
 
-Krav:
-- Hver kandidat skal ENTEN ha en EditDecision ELLER stå i dropped_clip_ids.
-- order er 1-indeksert og sammenhengende (1, 2, 3, ...) i visningsrekkefølge.
-- slowmo_segments er i sekunder relativt til klippets start og må ligge
-  innenfor klippets varighet (duration_seconds). factor 0.2-0.5 for slow-mo.
-- kills[] per kandidat er read-only kontekst: hvert drap med offset_s
-  (sekunder fra klippstart), våpen, headshot og offer. Bruk dem til å legge
-  slowmo_segments PRESIST rundt det mest spektakulære drapet (typisk siste)
-  i stedet for å gjette — f.eks. fra ~0.5 s før til ~0.5 s etter offset_s.
-- clutch_vs=1 betyr en VUNNET 1v1-DUELL: legg alltid et kort slow-mo
-  (factor ~0.4) rundt siste kill i det klippet — duellavslutningen er poenget.
-- Har FLERE kandidater i samme runde clutch_vs >= 2, er de deler av SAMME
-  clutch (lang pause mellom kills splitter klipp). Da skal ALLE med, rett
-  etter hverandre i kronologisk rekkefølge (stigende start_tick) — det siste
-  klippet er selve payoffen og droppes ALDRI. Slow-mo hører hjemme på
-  avslutningskillet i SISTE del.
-- demo_path settes til demoens sti (over).
-- is_climax/effects_on/effects_off er valgfrie — utelat dem der standard-
-  reglene holder. Samme effekt kan ikke stå i både effects_on og effects_off.
+Requirements:
+- Every candidate must EITHER have an EditDecision OR be in dropped_clip_ids.
+- order is 1-indexed and contiguous (1, 2, 3, ...) in display order.
+- slowmo_segments are in seconds relative to the clip's start and must lie
+  within the clip's duration (duration_seconds). factor 0.2-0.5 for slow-mo.
+- kills[] per candidate is read-only context: each kill with offset_s
+  (seconds from clip start), weapon, headshot and victim. Use them to place
+  slowmo_segments PRECISELY around the most spectacular kill (usually the
+  last) instead of guessing — e.g. from ~0.5 s before to ~0.5 s after offset_s.
+- clutch_vs=1 means a WON 1v1 DUEL: always add a short slow-mo
+  (factor ~0.4) around the last kill in that clip — the end of the duel is the point.
+- If SEVERAL candidates in the same round have clutch_vs >= 2, they are parts
+  of the SAME clutch (a long pause between kills splits clips). Then ALL of
+  them must be included, back to back in chronological order (ascending
+  start_tick) — the last clip is the payoff and is NEVER dropped. Slow-mo
+  belongs on the final kill in the LAST part.
+- demo_path is set to the demo's path (above).
+- is_climax/effects_on/effects_off are optional — leave them out where the
+  default rules hold. The same effect can't be in both effects_on and effects_off.
 """
 
 
@@ -120,21 +119,21 @@ def _semantic_errors(
     used = [d.clip_id for d in plan.decisions]
     unknown = [c for c in used + plan.dropped_clip_ids if c not in by_id]
     if unknown:
-        errors.append(f"Ukjente clip_id-er: {unknown}. Gyldige: {sorted(by_id)}")
+        errors.append(f"Unknown clip_ids: {unknown}. Valid: {sorted(by_id)}")
     if len(set(used)) != len(used):
-        errors.append("Duplikate clip_id-er i decisions.")
+        errors.append("Duplicate clip_ids in decisions.")
 
     covered = set(used) | set(plan.dropped_clip_ids)
     missing = sorted(set(by_id) - covered)
     if missing:
         errors.append(
-            f"Kandidater verken valgt eller droppet: {missing}. "
-            f"Alle skal enten ha en decision eller stå i dropped_clip_ids."
+            f"Candidates neither chosen nor dropped: {missing}. "
+            f"Every candidate must either have a decision or be in dropped_clip_ids."
         )
 
     orders = sorted(d.order for d in plan.decisions)
     if orders != list(range(1, len(orders) + 1)):
-        errors.append(f"order må være 1..{len(orders)} uten hull, var: {orders}")
+        errors.append(f"order must be 1..{len(orders)} without gaps, was: {orders}")
 
     for d in plan.decisions:
         cand = by_id.get(d.clip_id)
@@ -143,41 +142,41 @@ def _semantic_errors(
         for seg in d.slowmo_segments:
             if not (0 <= seg.start_s < seg.end_s <= cand.duration_seconds + 0.5):
                 errors.append(
-                    f"{d.clip_id}: slowmo {seg.start_s}-{seg.end_s}s utenfor "
-                    f"klippets varighet ({cand.duration_seconds}s)."
+                    f"{d.clip_id}: slowmo {seg.start_s}-{seg.end_s}s outside "
+                    f"the clip's duration ({cand.duration_seconds}s)."
                 )
             if not (0.1 <= seg.factor <= 1.0):
                 errors.append(
-                    f"{d.clip_id}: slowmo factor {seg.factor} utenfor 0.1-1.0."
+                    f"{d.clip_id}: slowmo factor {seg.factor} outside 0.1-1.0."
                 )
 
     if music_files and plan.music_track not in music_files:
         errors.append(
-            f"music_track '{plan.music_track}' finnes ikke. Velg fra lista."
+            f"music_track '{plan.music_track}' doesn't exist. Pick from the list."
         )
 
-    # P18: maks ett klimaks-klipp; on/off kan ikke overlappe
+    # At most one climax clip; on/off can't overlap
     climax = [d.clip_id for d in plan.decisions if d.is_climax]
     if len(climax) > 1:
         errors.append(
-            f"is_climax er satt på {len(climax)} klipp ({climax}) — maks ett."
+            f"is_climax is set on {len(climax)} clips ({climax}) — at most one."
         )
     for d in plan.decisions:
         both = set(d.effects_on) & set(d.effects_off)
         if both:
             errors.append(
-                f"{d.clip_id}: {sorted(both)} står i både effects_on og "
-                f"effects_off — velg én."
+                f"{d.clip_id}: {sorted(both)} is in both effects_on and "
+                f"effects_off — pick one."
             )
     replay_on = [d.clip_id for d in plan.decisions if "replay" in d.effects_on]
     if len(replay_on) > 1:
         errors.append(
-            f"'replay' i effects_on på {len(replay_on)} klipp ({replay_on}) "
-            f"— maks ett (én replay per film)."
+            f"'replay' in effects_on on {len(replay_on)} clips ({replay_on}) "
+            f"— at most one (one replay per film)."
         )
 
-    # Delt clutch (flere klipp fra samme vunnede clutch-runde): alle må med,
-    # sammenhengende og i kronologisk rekkefølge — payoffen ligger i siste.
+    # Split clutch (several clips from the same won clutch round): all must be
+    # included, contiguous and in chronological order — the payoff is in the last.
     clutch_rounds: dict[int, list] = {}
     for c in candidates:
         if c.clutch_vs and c.clutch_vs >= 2:
@@ -189,15 +188,15 @@ def _semantic_errors(
         ids = [c.clip_id for c in sorted(group, key=lambda c: c.start_tick)]
         if any(cid not in order_by_id for cid in ids):
             errors.append(
-                f"Runde {rnd_no}: clutchen er delt i flere klipp ({ids}) — "
-                f"ALLE må inkluderes; siste klipp er payoffen."
+                f"Round {rnd_no}: the clutch is split into several clips ({ids}) — "
+                f"ALL must be included; the last clip is the payoff."
             )
             continue
         orders = [order_by_id[cid] for cid in ids]
         if orders != list(range(min(orders), min(orders) + len(orders))):
             errors.append(
-                f"Runde {rnd_no}: clutch-delene {ids} må stå rett etter "
-                f"hverandre i kronologisk rekkefølge (order {orders})."
+                f"Round {rnd_no}: the clutch parts {ids} must come right after "
+                f"each other in chronological order (order {orders})."
             )
     return errors
 
@@ -237,11 +236,11 @@ def run_director(
             output_format=EditPlan,
         )
         if response.stop_reason == "refusal":
-            raise DirectorError("Modellen avslo forespørselen (refusal).")
+            raise DirectorError("The model refused the request (refusal).")
 
         plan = response.parsed_output
         if plan is None:
-            last_errors = ["Svaret kunne ikke parses til EditPlan."]
+            last_errors = ["The response couldn't be parsed into an EditPlan."]
         else:
             last_errors = _semantic_errors(plan, candidates, music_files)
             if not last_errors:
@@ -251,18 +250,18 @@ def run_director(
         raw_text = next(
             (b.text for b in response.content if b.type == "text"), ""
         )
-        messages.append({"role": "assistant", "content": raw_text or "(tomt)"})
+        messages.append({"role": "assistant", "content": raw_text or "(empty)"})
         messages.append(
             {
                 "role": "user",
                 "content": (
-                    "Planen din hadde feil — rett dem og returner hele planen "
-                    "på nytt:\n- " + "\n- ".join(last_errors)
+                    "Your plan had errors — fix them and return the whole plan "
+                    "again:\n- " + "\n- ".join(last_errors)
                 ),
             }
         )
-        print(f"    Director-forsøk {attempt} feilet: {len(last_errors)} feil")
+        print(f"    Director attempt {attempt} failed: {len(last_errors)} error(s)")
 
     raise DirectorError(
-        f"Ga opp etter {max_retries} forsøk. Siste feil: {last_errors}"
+        f"Gave up after {max_retries} attempts. Last errors: {last_errors}"
     )

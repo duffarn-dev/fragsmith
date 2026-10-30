@@ -41,7 +41,7 @@ def _text_card(
             str(out_path),
         ],
         log_path,
-        f"steg 7: {label}",
+        f"step 7: {label}",
     )
 
 
@@ -66,7 +66,7 @@ def _ensure_sfx(sfx_dir: Path, log_path: Path) -> dict[str, Path]:
                 "-ac", "2", str(whoosh),
             ],
             log_path,
-            "steg 7: syntetiserer whoosh.wav (P15)",
+            "step 7: synthesizing whoosh.wav",
         )
     if not impact.exists():
         # 52 Hz-dunk med dempet klikk-transient. NB: summen av gain-ene må
@@ -86,7 +86,7 @@ def _ensure_sfx(sfx_dir: Path, log_path: Path) -> dict[str, Path]:
                 "-map", "[sfx]", "-ac", "2", str(impact),
             ],
             log_path,
-            "steg 7: syntetiserer impact.wav (P15)",
+            "step 7: synthesizing impact.wav",
         )
     return {"whoosh": whoosh, "impact": impact}
 
@@ -142,7 +142,7 @@ def _stats_card(
         (line2, 40, 0.58),
     ]
     if stats["best_clutch"]:
-        rows.append((f"Beste clutch: 1v{stats['best_clutch']}", 40, 0.67))
+        rows.append((f"Best clutch: 1v{stats['best_clutch']}", 40, 0.67))
     draw = ",".join(
         f"drawtext=fontfile='{FONT_FILE}':text='{drawtext_escape(txt)}'"
         f":expansion=none"
@@ -164,7 +164,7 @@ def _stats_card(
             str(out_path),
         ],
         log_path,
-        "steg 7: stats-outro",
+        "step 7: stats outro",
     )
 
 
@@ -220,7 +220,7 @@ def build_intro_hook(
                 str(out),
             ],
             log_path,
-            f"steg 7: cold open-glimt {i + 1}",
+            f"step 7: cold open glimpse {i + 1}",
         )
         glimt.append(out)
     return glimt
@@ -257,7 +257,7 @@ def assemble(
     work = run_dir / "04-segments"
     intro = work / "00_intro.mp4"
     outro = work / "99_outro.mp4"
-    _text_card(plan.intro_text, intro_s, intro, log_path, "intro-kort")
+    _text_card(plan.intro_text, intro_s, intro, log_path, "intro card")
 
     # P13: stats-outro når [editing].stats_outro og grunnlaget finnes —
     # ellers vanlig tekstkort (aldri halvtomt stats-kort)
@@ -275,7 +275,7 @@ def assemble(
         _stats_card(plan.outro_text, pov_name, stats,
                     max(outro_s, 3.5), outro, log_path)
     else:
-        _text_card(plan.outro_text, outro_s, outro, log_path, "outro-kort")
+        _text_card(plan.outro_text, outro_s, outro, log_path, "outro card")
 
     hook = (
         hook_files
@@ -293,7 +293,7 @@ def assemble(
         ["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy",
          str(timeline)],
         log_path,
-        "steg 7: concat av segmenter",
+        "step 7: concatenating segments",
     )
 
     total = probe_duration(timeline)
@@ -388,7 +388,7 @@ def assemble(
             str(final),
         ],
         log_path,
-        "steg 7: musikkmiks + eksport",
+        "step 7: music mix + export",
     )
     return final
 
@@ -405,25 +405,25 @@ def write_report(
 ) -> Path:
     final_duration = probe_duration(final_path)
     lines = [
-        f"# Fragsmith-rapport — {Path(plan.demo_path).name}",
+        f"# Fragsmith report — {Path(plan.demo_path).name}",
         "",
-        f"**Generert:** {datetime.now():%Y-%m-%d %H:%M}",
+        f"**Generated:** {datetime.now():%Y-%m-%d %H:%M}",
         f"**Film:** {final_path.name} ({final_duration:.1f} s)",
-        f"**Musikk:** {plan.music_track} ({beats.get('bpm', '?')} BPM)",
+        f"**Music:** {plan.music_track} ({beats.get('bpm', '?')} BPM)",
     ]
     # P21: drop-sync-avgjørelsen (lagt i beats-dicten av cmd_finish)
     ds = beats.get("drop_sync")
     if ds:
         method = (
-            "intro-justering"
+            "intro adjustment"
             if ds["method"] == "intro"
-            else f"musikk-offset {ds['music_offset']:.1f} s"
+            else f"music offset {ds['music_offset']:.1f} s"
         )
         err = ds.get("actual_error_ms", ds.get("predicted_error_ms", 0))
         lines.append(
-            f"**Drop-sync (P21):** klimaks ({ds['climax_clip_id']}) lagt på "
-            f"droppet ved {ds['drop_track_s']:.1f} s i sporet via {method} — "
-            f"avvik {err:+d} ms"
+            f"**Drop sync:** climax ({ds['climax_clip_id']}) placed on "
+            f"the drop at {ds['drop_track_s']:.1f} s into the track via {method} — "
+            f"offset {err:+d} ms"
         )
     # P13: samme tall som stats-outroen viser, så de kan kontrolleres her
     any_cand = next(iter(candidates_by_id.values()), None)
@@ -432,20 +432,20 @@ def write_report(
     ) if any_cand else None
     if stats:
         line = (
-            f"**POV-stats:** {stats['kills']} kills / {stats['deaths']} deaths "
+            f"**POV stats:** {stats['kills']} kills / {stats['deaths']} deaths "
             f"(K/D {stats['kd']:.2f})"
         )
         if stats["hs_pct"] is not None:
             line += f", {stats['hs_pct']}% HS"
         if stats["best_clutch"]:
-            line += f", beste clutch 1v{stats['best_clutch']}"
+            line += f", best clutch 1v{stats['best_clutch']}"
         lines.append(line)
     lines += [
         "",
-        "## Klipp som ble med",
+        "## Clips in the film",
         "",
-        "| # | klipp | hype | lengde | overlay | beat-synk (mål ±100 ms) |",
-        "|---|-------|------|--------|---------|--------------------------|",
+        "| # | clip | hype | length | overlay | beat sync (target ±100 ms) |",
+        "|---|------|------|--------|---------|----------------------------|",
     ]
     by_order = {c["order"]: c for c in cut_log}
     for d in sorted(plan.decisions, key=lambda d: d.order):
@@ -457,30 +457,30 @@ def write_report(
             f"{cand.hype_score if cand else '?'} | "
             f"{cut.get('segment_duration_s', '?')} s | "
             f"{d.overlay_text or '—'} | "
-            f"{f'{offset:+d} ms' if offset is not None else 'fraveket'} |"
+            f"{f'{offset:+d} ms' if offset is not None else 'skipped'} |"
         )
-    lines += ["", "## Directors begrunnelser", ""]
+    lines += ["", "## Director's reasoning", ""]
     for d in sorted(plan.decisions, key=lambda d: d.order):
         # P18: vis effektvalgene Director gjorde utover standardreglene
         choices = []
         if d.is_climax:
-            choices.append("klimaks")
+            choices.append("climax")
         choices += [f"+{e}" for e in d.effects_on]
         choices += [f"−{e}" for e in d.effects_off]
-        suffix = f" *(Director-valg: {', '.join(choices)})*" if choices else ""
+        suffix = f" *(Director's choices: {', '.join(choices)})*" if choices else ""
         lines.append(f"- **{d.clip_id}:** {d.reasoning}{suffix}")
     if plan.dropped_clip_ids:
-        lines += ["", "## Droppede kandidater", ""]
+        lines += ["", "## Dropped candidates", ""]
         for cid in plan.dropped_clip_ids:
             cand = candidates_by_id.get(cid)
             score = f" (hype {cand.hype_score})" if cand else ""
             lines.append(f"- {cid}{score}")
     if flags:
-        lines += ["", "## Flagg", ""]
+        lines += ["", "## Flags", ""]
         lines += [f"- {f}" for f in flags]
     lines += [
         "",
-        "## Cut-logg (beat-sync)",
+        "## Cut log (beat sync)",
         "",
         "```json",
         json.dumps(cut_log, indent=2, ensure_ascii=False),
