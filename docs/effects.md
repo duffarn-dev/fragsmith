@@ -4,7 +4,7 @@ Every effect is applied by the editing engine (step 6, `lib/edit_engine.py`) or 
 
 All effects are toggled in `config.toml`. Most of them scale with the global `[effects].intensity` (0.0–2.0). Set `[effects].enabled = false` to turn everything off at once.
 
-The AI Director (step 3) can *choose* where the big moves go (climax clip, replay, letterbox, which kills get a punch), but it never sets numeric parameters. Those always come from your config.
+The AI Director (step 3) can *choose* where the big moves go (climax clip, replay, letterbox, which kills get a punch), but it never sets numeric parameters. Those always come from your config. The rule-based Director (used without an API key) never overrides effects, so you get the default rules described below.
 
 ## Look
 

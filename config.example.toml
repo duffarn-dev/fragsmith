@@ -41,6 +41,12 @@ highfps_framerate = 120
 true_view = true
 
 [director]
+# Who makes the edit plan in step 3:
+#   "auto"   = Claude if ANTHROPIC_API_KEY is set, otherwise the built-in rules
+#   "claude" = always Claude (stops if the key is missing)
+#   "rules"  = always the built-in rules (no API key, no cost, works offline)
+# python main.py run --director rules|claude overrides this for one run.
+mode = "auto"
 model = "claude-opus-4-8"
 max_retries = 3
 

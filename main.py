@@ -141,16 +141,23 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("No candidate clips — stopping here (nothing to make a film from).")
         return 0
 
-    # --- Step 3: AI Director ---------------------------------------------
+    # --- Step 3: Director (Claude or rules) -------------------------------
     import os
 
-    from lib.director import DirectorError, list_music_files, run_director
+    from lib.director import DirectorError, list_music_files
 
+    dcfg = cfg.get("director", {})
+    mode = str(getattr(args, "director", None) or dcfg.get("mode", "auto")).lower()
+    if mode not in ("auto", "rules", "claude"):
+        print(f"ERROR: unknown Director mode '{mode}' (use auto, rules or claude).")
+        return 1
     load_dotenv()
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    if mode == "claude" and not has_key:
         print(
-            "STOPPED before step 3: ANTHROPIC_API_KEY is missing. "
-            "Put the key in a .env file in the project folder."
+            "STOPPED before step 3: Director mode is 'claude' but "
+            "ANTHROPIC_API_KEY is missing. Put the key in a .env file in the "
+            "project folder, or use --director rules."
         )
         return 1
 
@@ -163,24 +170,48 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return 1
 
-    dcfg = cfg.get("director", {})
-    print(f"Step 3: AI Director ({dcfg.get('model', 'claude-opus-4-8')}) ...")
-    try:
-        plan = run_director(
-            candidates=candidates,
-            events=events,
-            music_files=music_files,
-            pov_name=pov_name,
-            run_dir=run_dir,
-            model=dcfg.get("model", "claude-opus-4-8"),
-            max_retries=int(dcfg.get("max_retries", 3)),
-        )
-    except DirectorError as exc:
-        print(f"STOPPED in step 3: {exc}")
-        (run_dir / "error.json").write_text(
-            json.dumps({"step": 3, "error": str(exc)}, indent=2), encoding="utf-8"
-        )
-        return 1
+    plan = None
+    director_label = "rules"
+    if mode == "claude" or (mode == "auto" and has_key):
+        model = dcfg.get("model", "claude-opus-4-8")
+        print(f"Step 3: AI Director ({model}) ...")
+        try:
+            from lib.director import run_director
+
+            plan = run_director(
+                candidates=candidates,
+                events=events,
+                music_files=music_files,
+                pov_name=pov_name,
+                run_dir=run_dir,
+                model=model,
+                max_retries=int(dcfg.get("max_retries", 3)),
+            )
+            director_label = f"Claude ({model})"
+        except DirectorError as exc:
+            if mode == "claude":
+                print(f"STOPPED in step 3: {exc}")
+                (run_dir / "error.json").write_text(
+                    json.dumps({"step": 3, "error": str(exc)}, indent=2),
+                    encoding="utf-8",
+                )
+                return 1
+            print(f"    Claude failed: {exc}")
+            print("    Falling back to the rule-based Director.")
+    if plan is None:
+        note = " (no ANTHROPIC_API_KEY found)" if mode == "auto" and not has_key else ""
+        print(f"Step 3: rule-based Director{note} ...")
+        from lib.rules_director import run_rules_director
+
+        try:
+            plan = run_rules_director(candidates, events, music_files, pov_name)
+        except DirectorError as exc:
+            print(f"STOPPED in step 3: {exc}")
+            (run_dir / "error.json").write_text(
+                json.dumps({"step": 3, "error": str(exc)}, indent=2),
+                encoding="utf-8",
+            )
+            return 1
 
     (run_dir / "02-edit-plan.json").write_text(
         plan.model_dump_json(indent=2), encoding="utf-8"
@@ -222,6 +253,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     print()
     print("=" * 64)
     print("EDIT PLAN (phase stop — rendering requires your approval)")
+    print(f"  Director: {director_label}")
     print(f"  Music: {plan.music_track}")
     print(f"  Intro: {plan.intro_text}   Outro: {plan.outro_text}")
     print(f"  {'#':>2} {'clip':<22} {'score':>6} {'sec':>6}  overlay/slow-mo")
@@ -591,7 +623,10 @@ def cmd_batch(args: argparse.Namespace) -> int:
     for i, (stem, path) in enumerate(todo.items(), start=1):
         print(f"\n--- [{i}/{len(todo)}] {path.name} " + "-" * 20)
         code = cmd_run(
-            argparse.Namespace(demo=str(path), player=args.player, music=None)
+            argparse.Namespace(
+                demo=str(path), player=args.player, music=None,
+                director=args.director,
+            )
         )
         processed[stem] = {
             "demo": path.name,
@@ -649,6 +684,10 @@ def main() -> int:
     run_p.add_argument("demo", help="Path to a .dem or .dem.bz2 file")
     run_p.add_argument("--player", help="SteamID64 for the POV (overrides config)")
     run_p.add_argument("--music", help="Music file or folder (overrides config)")
+    run_p.add_argument(
+        "--director", choices=("auto", "rules", "claude"),
+        help="Who makes the edit plan (overrides [director].mode)",
+    )
     run_p.set_defaults(func=cmd_run)
 
     ren_p = sub.add_parser(
@@ -670,6 +709,10 @@ def main() -> int:
     batch_p.add_argument("folder", help="Folder with .dem/.dem.bz2 files")
     batch_p.add_argument("--player", help="SteamID64 for the POV (overrides config)")
     batch_p.add_argument("--force", action="store_true", help="Also re-run already processed demos")
+    batch_p.add_argument(
+        "--director", choices=("auto", "rules", "claude"),
+        help="Who makes the edit plans (overrides [director].mode)",
+    )
     batch_p.set_defaults(func=cmd_batch)
 
     clean_p = sub.add_parser("cleanup", help="Delete raw clips/segments for a run")

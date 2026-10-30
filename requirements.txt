@@ -2,7 +2,7 @@
 demoparser2>=2.13
 pydantic>=2.0
 
-# AI Director
+# AI Director (optional: only needed when Claude makes the edit plan)
 anthropic>=0.116
 # Beat analysis
 librosa>=0.11

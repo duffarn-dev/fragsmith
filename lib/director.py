@@ -1,18 +1,21 @@
 """Step 3: AI Director — Claude picks the final clips, order and pacing.
 
-The only LLM step in the pipeline. Structured output via messages.parse() +
-Pydantic (EditPlan). On validation/semantic errors: retry with the error
-message sent back to the model, max 3 attempts, then DirectorError.
+The only LLM step in the pipeline, and optional: without an API key the
+rule-based Director in lib/rules_director.py makes the plan instead.
+Structured output via messages.parse() + Pydantic (EditPlan). On
+validation/semantic errors: retry with the error message sent back to the
+model, max 3 attempts, then DirectorError.
 
 Everything is logged: the prompt to runs/<id>/02-edit-plan.prompt.txt, the
 plan (incl. reasoning per clip) to 02-edit-plan.json.
+
+anthropic is imported inside run_director, so rules mode works without
+the package installed.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
-
-import anthropic
 
 from lib.models import EditPlan, Highlight
 
@@ -110,9 +113,10 @@ Requirements:
 """
 
 
-def _semantic_errors(
+def semantic_errors(
     plan: EditPlan, candidates: list[Highlight], music_files: list[str]
 ) -> list[str]:
+    """Checks the schema can't express. Shared by both Directors."""
     errors: list[str] = []
     by_id = {c.clip_id: c for c in candidates}
 
@@ -219,6 +223,13 @@ def run_director(
     model: str,
     max_retries: int = 3,
 ) -> EditPlan:
+    try:
+        import anthropic
+    except ImportError as exc:
+        raise DirectorError(
+            "The anthropic package isn't installed (pip install anthropic)."
+        ) from exc
+
     client = anthropic.Anthropic()
     prompt = _build_prompt(candidates, events, music_files, pov_name)
     (run_dir / "02-edit-plan.prompt.txt").write_text(prompt, encoding="utf-8")
@@ -227,14 +238,18 @@ def run_director(
     last_errors: list[str] = []
 
     for attempt in range(1, max_retries + 1):
-        response = client.messages.parse(
-            model=model,
-            max_tokens=16000,
-            system=SYSTEM_PROMPT,
-            thinking={"type": "adaptive"},
-            messages=messages,
-            output_format=EditPlan,
-        )
+        try:
+            response = client.messages.parse(
+                model=model,
+                max_tokens=16000,
+                system=SYSTEM_PROMPT,
+                thinking={"type": "adaptive"},
+                messages=messages,
+                output_format=EditPlan,
+            )
+        except anthropic.APIError as exc:
+            # network, auth, rate limit etc.: let the caller decide on a fallback
+            raise DirectorError(f"API error: {exc}") from exc
         if response.stop_reason == "refusal":
             raise DirectorError("The model refused the request (refusal).")
 
@@ -242,7 +257,7 @@ def run_director(
         if plan is None:
             last_errors = ["The response couldn't be parsed into an EditPlan."]
         else:
-            last_errors = _semantic_errors(plan, candidates, music_files)
+            last_errors = semantic_errors(plan, candidates, music_files)
             if not last_errors:
                 plan.demo_path = events.get("demo_path", plan.demo_path)
                 return plan

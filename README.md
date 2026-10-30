@@ -8,7 +8,7 @@ Turn a CS2 demo (`.dem`) into a finished fragmovie (mp4) automatically, with the
 |---|---|---|
 | 1 | Parses the demo: kills, headshots, weapons, clutches | demoparser2 |
 | 2 | Rule-based hype scoring of kill clusters | script |
-| 3 | AI Director picks clips, order and slow-mo | Claude (the only LLM step) |
+| 3 | Director picks clips, order and slow-mo | Claude (optional) or built-in rules |
 | 4 | Renders raw clips from the demo | CS Demo Manager (`csdm video`) + HLAE |
 | 5 | Beat analysis of the chosen music track | librosa |
 | 6–7 | Cutting, effects and assembly into `final.mp4` | ffmpeg |
@@ -17,7 +17,7 @@ There's a pause after step 3: you see the edit plan and the estimated render tim
 
 ## Setup
 
-Requires Python, ffmpeg and an `ANTHROPIC_API_KEY` in `.env`.
+Requires Python and ffmpeg.
 
 ```
 python -m venv .venv
@@ -26,6 +26,21 @@ copy config.example.toml config.toml
 ```
 
 Then fill in your SteamID64 and music folder in `config.toml`.
+
+### Claude or rules?
+
+Step 3 (picking the clips, their order, slow-mo and overlay text) works two ways:
+
+- **Built-in rules** (free, offline): aces, 3k+ and clutches are always in, the best clip ends the film, slow-mo goes on the biggest kills. Good results, same plan every time for the same demo.
+- **Claude** (needs an Anthropic API key, billed per film by Anthropic): reads the whole match and makes more varied choices, writes the overlay text, and explains every decision in `report.md`.
+
+By default (`[director].mode = "auto"`), Fragsmith uses Claude if it finds an `ANTHROPIC_API_KEY` and the rules otherwise. To use Claude, put the key in a `.env` file in the project folder:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Force one or the other for a single run with `--director rules` or `--director claude`.
 
 Rendering (step 4) needs a Windows PC with CS2 and CS Demo Manager installed. It can be the same PC or a separate render PC running `worker.py`. See [docs/two-pc-setup.md](docs/two-pc-setup.md).
 

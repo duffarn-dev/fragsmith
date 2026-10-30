@@ -5,6 +5,7 @@ Run them directly, no pytest needed:
     python tests/test_highfps.py
     python tests/test_beats.py
     python tests/test_drop_sync.py
+    python tests/test_rules_director.py
 
 ## Patterns worth reusing
 

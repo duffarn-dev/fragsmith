@@ -5,7 +5,11 @@ Autonomous pipeline: CS2 `.dem` file → finished fragmovie (mp4) with music syn
 ## Architecture (short)
 - **Step 1** parse demo (demoparser2) → `runs/<id>/00-events.json`
 - **Step 2** rule-based hype scoring → `runs/<id>/01-candidates.json` (max 25)
-- **Step 3** AI Director (Claude + Pydantic, max 3 retries) → `02-edit-plan.json`
+- **Step 3** Director → `02-edit-plan.json`. `[director].mode`: `auto` (Claude
+  if `ANTHROPIC_API_KEY` is set, else rules; falls back to rules if Claude
+  fails), `claude` (Claude + Pydantic, max 3 retries) or `rules`
+  (`lib/rules_director.py`, no LLM). Both plans pass the same
+  `director.semantic_errors` check.
 - **PHASE STOP:** show the edit plan + estimated render time/disk, wait for OK
 - **Step 4** render raw clips via `csdm video` (runs on the render PC, see below).
   Clips that will get slow-mo (Director segments from step 3, headshot micro
@@ -18,7 +22,9 @@ Autonomous pipeline: CS2 `.dem` file → finished fragmovie (mp4) with music syn
 - **Step 6** editing engine (raw ffmpeg via subprocess — NOT moviepy)
 - **Step 7** assembly → `final.mp4` + `report.md`
 
-The LLM is used ONLY in step 3. Everything else is a deterministic script.
+The LLM is used ONLY in step 3, and is optional. Everything else is a
+deterministic script. `anthropic` is imported lazily, so rules mode must keep
+working without the package installed.
 
 ## Render PC
 - **Main PC:** everything except rendering.
