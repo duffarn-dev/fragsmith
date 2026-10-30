@@ -1,0 +1,11 @@
+runs/
+.env
+__pycache__/
+*.dem
+*.dem.bz2
+.venv/
+.claude/settings.local.json
+
+# Personlige filer
+config.toml
+processed.json
