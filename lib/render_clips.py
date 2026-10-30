@@ -1,9 +1,16 @@
-"""Step 4 (main-PC side): build render jobs for the worker on the render PC.
+"""Step 4 (main-PC side): render raw clips, on this PC or a render PC.
 
-Job queue over a shared folder, SSH or USB: the main PC writes a job JSON +
-demo file, the worker (worker.py) picks it up, runs csdm analyze + video
-(HLAE + FFmpeg, all sequences in ONE CS2 launch), and puts the raw clips
-in the outbox. Then: `python main.py finish <run-dir>` fetches them.
+[render].mode picks the transport (see render_mode):
+- "local":  one PC. render_local() runs csdm right here, straight into
+            runs/<id>/03-raw-clips/. No queue, no worker window.
+- "ssh":    two PCs. The job + demo are sent over SSH; finish fetches clips.
+- "folder": two PCs. Job queue in a shared folder (job_dir), or manual USB
+            transfer when job_dir is empty.
+
+In the two-PC modes the main PC writes a job JSON + demo file, the worker
+(worker.py) picks it up, runs csdm analyze + video (HLAE + FFmpeg, all
+sequences in ONE CS2 launch), and puts the raw clips in the outbox. Then:
+`python main.py finish <run-dir>` fetches them.
 
 Job folder layout:
     <job_dir>/demos/    demo files
@@ -82,6 +89,56 @@ def build_render_job(
         },
         "clips": clips,
     }
+
+
+RENDER_MODES = ("local", "ssh", "folder")
+
+
+def render_mode(render_cfg: dict) -> str:
+    """The configured mode. Configs from before [render].mode existed are
+    read the old way: ssh_host set → ssh, otherwise folder (job_dir or USB)."""
+    mode = str(render_cfg.get("mode", "") or "").lower()
+    if mode:
+        if mode not in RENDER_MODES:
+            raise ValueError(
+                f"Unknown [render].mode '{mode}' (use local, ssh or folder)."
+            )
+        return mode
+    return "ssh" if render_cfg.get("ssh_host") else "folder"
+
+
+def csdm_path(render_cfg: dict) -> Path:
+    """[render].csdm_path, or CS Demo Manager's default install location."""
+    import worker  # stdlib only; lives in the project root
+
+    custom = str(render_cfg.get("csdm_path", "") or "")
+    return Path(custom) if custom else worker.DEFAULT_CSDM
+
+
+def render_local(job: dict, demo_path: Path, run_dir: Path, render_cfg: dict) -> dict:
+    """One-PC mode: render straight into run_dir/03-raw-clips/ with the same
+    code the worker uses. Logs to run_dir/worker.log, result to
+    run_dir/render-result.json. Raises RuntimeError if csdm fails outright."""
+    import worker
+
+    result: dict = {"run_id": job["run_id"], "status": "failed", "clips": {}}
+    try:
+        result = worker.render_job(
+            job,
+            demo_path=demo_path,
+            out_dir=run_dir / "03-raw-clips",
+            csdm=csdm_path(render_cfg),
+            log_dir=run_dir,
+            work_dir=run_dir,
+        )
+    except Exception as exc:
+        result["error"] = str(exc)
+        raise
+    finally:
+        (run_dir / "render-result.json").write_text(
+            json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    return result
 
 
 def submit_job(job: dict, demo_path: Path, job_dir: Path) -> Path:

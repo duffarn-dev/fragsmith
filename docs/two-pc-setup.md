@@ -2,6 +2,10 @@
 
 Rendering (step 4) needs a Windows PC with CS2 running in the foreground, and that PC is busy while it renders. If you have a second PC, you can let it do the rendering while you keep using your main PC.
 
+With only one PC you don't need any of this: keep `[render].mode = "local"` and `render` runs CS2 on your own PC.
+
+`python main.py setup` asks the same questions as this page and writes the config for you. `python main.py doctor` then checks the connection to the render PC.
+
 - **Main PC:** everything except rendering (parsing, AI Director, editing, music).
 - **Render PC:** runs `worker.py`, which picks up render jobs from a job folder, launches CS2 through CS Demo Manager and HLAE, and puts the raw clips back.
 
@@ -25,6 +29,7 @@ Rendering (step 4) needs a Windows PC with CS2 running in the foreground, and th
 
 ```toml
 [render]
+mode = "ssh"
 ssh_host = "user@192.168.1.50"
 ssh_key = 'C:\Users\<you>\.ssh\fragsmith_render'
 remote_job_dir = "C:/fragsmith-jobs"
@@ -35,10 +40,11 @@ remote_job_dir = "C:/fragsmith-jobs"
 2. On the main PC, set the path in `config.toml`:
    ```toml
    [render]
+   mode = "folder"
    job_dir = '\\RENDER-PC-NAME\fragsmith-jobs'
    ```
 
-**Option C: USB.** Leave both `ssh_host` and `job_dir` empty. The `render` command then writes the job locally and tells you exactly what to copy.
+**Option C: USB.** Set `mode = "folder"` and leave `job_dir` empty. The `render` command then writes the job locally and tells you exactly what to copy.
 
 ## Start the worker
 

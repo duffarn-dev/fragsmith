@@ -6,6 +6,7 @@ Run them directly, no pytest needed:
     python tests/test_beats.py
     python tests/test_drop_sync.py
     python tests/test_rules_director.py
+    python tests/test_render_modes.py
 
 ## Patterns worth reusing
 

@@ -17,15 +17,23 @@ There's a pause after step 3: you see the edit plan and the estimated render tim
 
 ## Setup
 
-Requires Python and ffmpeg.
+Requires Windows, Python 3.11+, [ffmpeg](https://ffmpeg.org/download.html), CS2 and [CS Demo Manager](https://cs-demo-manager.com) (open it once and finish its setup wizard).
 
 ```
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
-copy config.example.toml config.toml
+.venv\Scripts\python main.py setup
+.venv\Scripts\python main.py doctor
 ```
 
-Then fill in your SteamID64 and music folder in `config.toml`.
+`setup` asks for your SteamID64, your music folder and whether you render on this PC or a separate one, then writes `config.toml`. `doctor` checks that everything is installed and tells you what's missing. You can also copy `config.example.toml` to `config.toml` and edit it by hand.
+
+### One PC or two?
+
+Rendering launches CS2 and takes over that PC's screen for a few minutes per film.
+
+- **One PC** (`[render].mode = "local"`, the default): `render` runs CS2 right on your PC. Nothing else to set up.
+- **Two PCs** (`"ssh"` or `"folder"`): a second PC with CS2 runs `worker.py` and does the rendering while you keep using your main PC. See [docs/two-pc-setup.md](docs/two-pc-setup.md).
 
 ### Claude or rules?
 
@@ -42,13 +50,11 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 Force one or the other for a single run with `--director rules` or `--director claude`.
 
-Rendering (step 4) needs a Windows PC with CS2 and CS Demo Manager installed. It can be the same PC or a separate render PC running `worker.py`. See [docs/two-pc-setup.md](docs/two-pc-setup.md).
-
 ## Usage
 
 ```
 python main.py run <demo.dem>        # steps 1–3, shows the edit plan
-python main.py render runs/<id>      # step 4, sends the render job to the worker
+python main.py render runs/<id>      # step 4, renders the clips (here or on the render PC)
 python main.py finish runs/<id>      # steps 5–7, creates final.mp4
 python main.py batch <folder>        # steps 1–3 for every demo in a folder
 python main.py cleanup runs/<id>     # deletes raw clips and intermediate files

@@ -1,5 +1,8 @@
 """Fragsmith render worker — runs on the RENDER PC (with CS2 + CS Demo Manager).
 
+Only needed in two-PC mode ([render].mode = "ssh" or "folder"). With one PC
+("local"), `main.py render` calls render_job() directly instead.
+
 Standard library only: just needs Python 3.10+ installed.
 
     python worker.py --job-dir <shared folder or local queue> [--csdm <path to csdm>] [--once]
@@ -182,6 +185,105 @@ def map_outputs(raw_dir: Path, clips: list[dict]) -> tuple[dict[str, Path], list
     return mapping, warnings
 
 
+def render_job(
+    job: dict, demo_path: Path, out_dir: Path, csdm: Path,
+    log_dir: Path, work_dir: Path,
+) -> dict:
+    """Render every clip in a job to out_dir/<clip_id>.mp4 and return the
+    result dict (status ok/partial/failed, per-clip status, warnings).
+
+    Used by the queue (process_job) and directly by `main.py render` in
+    one-PC mode. Raises RuntimeError when csdm fails outright.
+    """
+    run_id = job["run_id"]
+    result: dict = {"run_id": run_id, "status": "failed", "warnings": [], "clips": {}}
+    if not demo_path.exists():
+        raise RuntimeError(f"Demo file missing: {demo_path}")
+
+    code, _ = run_csdm(csdm, ["analyze", str(demo_path)], log_dir)
+    if code != 0:
+        raise RuntimeError(f"csdm analyze failed (exit {code}).")
+
+    raw_dir = out_dir / "_raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    # One render pass per framerate (separate CS2 launch per pass)
+    configs = build_csdm_configs(job, demo_path, raw_dir)
+    config_paths: list[Path] = []
+    for i, config in enumerate(configs, start=1):
+        config_path = work_dir / f"{run_id}.csdm-config-{i}.json"
+        config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        config_paths.append(config_path)
+        log(
+            f"pass {i}/{len(configs)}: {len(config['sequences'])} sequences "
+            f"@ {config['framerate']} fps — launching CS2 + rendering, "
+            f"DON'T use the PC now ...",
+            log_dir,
+        )
+        code, output = run_csdm(
+            csdm, ["video", "--config-file", str(config_path)], log_dir
+        )
+        if code != 0:
+            hint = ""
+            if "hlae" in output.lower():
+                hint = (
+                    " (HLAE-related? Game updates break HLAE — "
+                    "update CS Demo Manager and try again.)"
+                )
+            raise RuntimeError(
+                f"csdm video failed in pass {i}/{len(configs)} "
+                f"(exit {code}).{hint}"
+            )
+
+    # Alternate-POV sequences map to <clip_id>_alt.mp4
+    all_clips = list(job["clips"])
+    for clip in job["clips"]:
+        if clip.get("alt_pov_steamid"):
+            all_clips.append(
+                {
+                    "clip_id": clip["clip_id"] + "_alt",
+                    "number": clip["number"] + ALT_SEQ_OFFSET,
+                }
+            )
+    mapping, warnings = map_outputs(raw_dir, all_clips)
+    result["warnings"] = warnings
+    for clip in all_clips:
+        src = mapping.get(clip["clip_id"])
+        if src is None:
+            result["clips"][clip["clip_id"]] = "missing"
+            log(f"WARNING: no output for {clip['clip_id']}", log_dir)
+            continue
+        # .mp4 name regardless of source container — ffmpeg reads content, not names
+        shutil.move(src, out_dir / f"{clip['clip_id']}.mp4")
+        result["clips"][clip["clip_id"]] = "ok"
+    if len(mapping) == len(all_clips):
+        shutil.rmtree(raw_dir, ignore_errors=True)
+    else:
+        # NEVER delete evidence when something is missing — list what's there
+        leftovers = [str(p.relative_to(raw_dir)) for p in raw_dir.rglob("*") if p.is_file()]
+        result["raw_leftovers"] = leftovers[:50]
+        log(f"keeping _raw for troubleshooting ({len(leftovers)} files)", log_dir)
+
+    done = [v for v in result["clips"].values() if v == "ok"]
+    # csdm can return exit 0 even when playback failed (e.g.
+    # "demo file incompatible") — the number of actual output files is the truth.
+    if len(done) == len(all_clips):
+        result["status"] = "ok"
+    elif done:
+        result["status"] = "partial"
+    else:
+        result["status"] = "failed"
+        result["error"] = (
+            "csdm ran, but no clips were produced. Typical causes: "
+            "the demo is from an older CS2 version (playback refused), or "
+            "HLAE broke after a game update."
+        )
+    log(f"job {run_id}: {result['status']} ({len(done)}/{len(all_clips)} clips)", log_dir)
+    for cp in config_paths:
+        cp.unlink(missing_ok=True)
+    return result
+
+
 def process_job(job_path: Path, job_dir: Path, csdm: Path) -> bool:
     job = json.loads(job_path.read_text(encoding="utf-8"))
     run_id = job["run_id"]
@@ -194,94 +296,15 @@ def process_job(job_path: Path, job_dir: Path, csdm: Path) -> bool:
     result_path = job_dir / "outbox" / f"{run_id}.result.json"
 
     try:
-        demo_path = job_dir / "demos" / job["demo_filename"]
-        if not demo_path.exists():
-            raise RuntimeError(f"Demo file missing: {demo_path}")
-
-        code, _ = run_csdm(csdm, ["analyze", str(demo_path)], job_dir)
-        if code != 0:
-            raise RuntimeError(f"csdm analyze failed (exit {code}).")
-
-        raw_dir = job_dir / "outbox" / run_id / "_raw"
-        raw_dir.mkdir(parents=True, exist_ok=True)
-        # One render pass per framerate (separate CS2 launch per pass)
-        configs = build_csdm_configs(job, demo_path, raw_dir)
-        config_paths: list[Path] = []
-        for i, config in enumerate(configs, start=1):
-            config_path = (
-                job_dir / "working" / f"{run_id}.csdm-config-{i}.json"
-            )
-            config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
-            config_paths.append(config_path)
-            log(
-                f"pass {i}/{len(configs)}: {len(config['sequences'])} sequences "
-                f"@ {config['framerate']} fps — launching CS2 + rendering, "
-                f"DON'T use the PC now ...",
-                job_dir,
-            )
-            code, output = run_csdm(
-                csdm, ["video", "--config-file", str(config_path)], job_dir
-            )
-            if code != 0:
-                hint = ""
-                if "hlae" in output.lower():
-                    hint = (
-                        " (HLAE-related? Game updates break HLAE — "
-                        "update CS Demo Manager and try again.)"
-                    )
-                raise RuntimeError(
-                    f"csdm video failed in pass {i}/{len(configs)} "
-                    f"(exit {code}).{hint}"
-                )
-
-        # Alternate-POV sequences map to <clip_id>_alt.mp4
-        all_clips = list(job["clips"])
-        for clip in job["clips"]:
-            if clip.get("alt_pov_steamid"):
-                all_clips.append(
-                    {
-                        "clip_id": clip["clip_id"] + "_alt",
-                        "number": clip["number"] + ALT_SEQ_OFFSET,
-                    }
-                )
-        mapping, warnings = map_outputs(raw_dir, all_clips)
-        result["warnings"] = warnings
-        out_dir = job_dir / "outbox" / run_id
-        for clip in all_clips:
-            src = mapping.get(clip["clip_id"])
-            if src is None:
-                result["clips"][clip["clip_id"]] = "missing"
-                log(f"WARNING: no output for {clip['clip_id']}", job_dir)
-                continue
-            # .mp4 name regardless of source container — ffmpeg reads content, not names
-            shutil.move(src, out_dir / f"{clip['clip_id']}.mp4")
-            result["clips"][clip["clip_id"]] = "ok"
-        if len(mapping) == len(all_clips):
-            shutil.rmtree(raw_dir, ignore_errors=True)
-        else:
-            # NEVER delete evidence when something is missing — list what's there
-            leftovers = [str(p.relative_to(raw_dir)) for p in raw_dir.rglob("*") if p.is_file()]
-            result["raw_leftovers"] = leftovers[:50]
-            log(f"keeping _raw for troubleshooting ({len(leftovers)} files)", job_dir)
-
-        done = [v for v in result["clips"].values() if v == "ok"]
-        # csdm can return exit 0 even when playback failed (e.g.
-        # "demo file incompatible") — the number of actual output files is the truth.
-        if len(done) == len(all_clips):
-            result["status"] = "ok"
-        elif done:
-            result["status"] = "partial"
-        else:
-            result["status"] = "failed"
-            result["error"] = (
-                "csdm ran, but no clips were produced. Typical causes: "
-                "the demo is from an older CS2 version (playback refused), or "
-                "HLAE broke after a game update."
-            )
-        log(f"job {run_id}: {result['status']} ({len(done)}/{len(all_clips)} clips)", job_dir)
+        result = render_job(
+            job,
+            demo_path=job_dir / "demos" / job["demo_filename"],
+            out_dir=job_dir / "outbox" / run_id,
+            csdm=csdm,
+            log_dir=job_dir,
+            work_dir=job_dir / "working",
+        )
         working.unlink(missing_ok=True)
-        for cp in config_paths:
-            cp.unlink(missing_ok=True)
         return True
 
     except Exception as exc:  # noqa: BLE001 — everything goes into the result file

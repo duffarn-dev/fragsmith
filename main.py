@@ -1,8 +1,12 @@
 """Fragsmith — CS2 .dem → fragmovie.
 
+First time:
+    python main.py setup               writes config.toml (one PC or two)
+    python main.py doctor              checks that everything is in place
+
 Workflow:
     python main.py run <demo.dem>      steps 0-3, stops at the edit plan
-    python main.py render runs/<id>    step 4, sends the render job (approval)
+    python main.py render runs/<id>    step 4, renders the clips (approval)
     python main.py finish runs/<id>    steps 5-7, creates final.mp4
 """
 from __future__ import annotations
@@ -341,9 +345,51 @@ def cmd_render(args: argparse.Namespace) -> int:
         print(f"ERROR: cannot find the demo file {demo_path} (needed for copying).")
         return 1
 
+    from lib.render_clips import csdm_path, render_local, render_mode
+
     render_cfg = cfg.get("render", {})
-    if render_cfg.get("ssh_host"):
+    try:
+        mode = render_mode(render_cfg)
+    except ValueError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    if mode == "local":
+        csdm = csdm_path(render_cfg)
+        if not csdm.exists():
+            print(
+                f"ERROR: cannot find CS Demo Manager at {csdm}. Install it, or "
+                f"set [render].csdm_path. 'python main.py doctor' checks the setup."
+            )
+            return 1
+        n_seq = len(job["clips"]) + n_alt
+        print(f"Rendering {n_seq} sequences on this PC (one-PC mode).")
+        print("CS2 will start and take over the screen — don't use the PC "
+              "until it closes again.")
+        try:
+            result = render_local(job, demo_path, run_dir, render_cfg)
+        except RuntimeError as exc:
+            print(f"STOPPED in step 4: {exc}")
+            print(f"Log: {run_dir / 'worker.log'}")
+            return 1
+        done = sum(1 for v in result["clips"].values() if v == "ok")
+        print(f"Render {result['status']}: {done}/{len(result['clips'])} clips "
+              f"in {run_dir / '03-raw-clips'}")
+        for w in result.get("warnings", []):
+            print(f"    ! {w}")
+        if result["status"] == "failed":
+            print(f"STOPPED: {result.get('error', 'no clips were produced.')}")
+            print(f"Log: {run_dir / 'worker.log'}")
+            return 1
+        print(f"Next: python main.py finish {args.run_dir}")
+        return 0
+
+    if mode == "ssh":
         from lib.render_clips import SshError, submit_job_ssh
+
+        if not render_cfg.get("ssh_host"):
+            print("ERROR: [render].mode is 'ssh' but ssh_host is empty in config.toml.")
+            return 1
 
         print(f"Sending job via SSH to {render_cfg['ssh_host']} ...")
         try:
@@ -419,9 +465,17 @@ def cmd_finish(args: argparse.Namespace) -> int:
 
     clips_dir = Path(args.clips) if args.clips else run_dir / "03-raw-clips"
     if not clips_dir.is_dir() or not any(clips_dir.glob("*.mp4")):
+        from lib.render_clips import render_mode
+
         render_cfg = cfg.get("render", {})
-        # Fetch automatically via SSH if configured
-        if render_cfg.get("ssh_host"):
+        try:
+            mode = render_mode(render_cfg)
+        except ValueError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        # Fetch automatically via SSH if configured (local mode renders
+        # straight into 03-raw-clips, so there's nothing to fetch)
+        if mode == "ssh" and render_cfg.get("ssh_host"):
             from lib.render_clips import collect_clips_ssh
 
             copied, result = collect_clips_ssh(
@@ -440,7 +494,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
             else:
                 print("No result.json from the worker yet — the job isn't finished.")
         # Otherwise: fetch from the shared/local job folder if configured
-        job_dir_cfg = render_cfg.get("job_dir", "")
+        job_dir_cfg = render_cfg.get("job_dir", "") if mode == "folder" else ""
         if job_dir_cfg and (not clips_dir.is_dir() or not any(clips_dir.glob("*.mp4"))):
             from lib.render_clips import collect_clips
 
@@ -669,6 +723,24 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from lib.doctor import run_doctor
+
+    load_dotenv()
+    return run_doctor(PROJECT_DIR)
+
+
+def cmd_setup(args: argparse.Namespace) -> int:
+    from lib.doctor import run_setup
+
+    load_dotenv()
+    try:
+        return run_setup(PROJECT_DIR)
+    except (KeyboardInterrupt, EOFError):
+        print("\nSetup cancelled, nothing written.")
+        return 1
+
+
 def main() -> int:
     # The Windows console is often cp1252 — player names can be anything
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -680,10 +752,16 @@ def main() -> int:
     )
     sub = ap.add_subparsers(dest="command", required=True)
 
+    setup_p = sub.add_parser("setup", help="Answer a few questions and write config.toml")
+    setup_p.set_defaults(func=cmd_setup)
+
+    doc_p = sub.add_parser("doctor", help="Check that everything needed is installed and configured")
+    doc_p.set_defaults(func=cmd_doctor)
+
     run_p = sub.add_parser("run", help="Steps 0-3 for one demo: parse, score, edit plan")
     run_p.add_argument("demo", help="Path to a .dem or .dem.bz2 file")
     run_p.add_argument("--player", help="SteamID64 for the POV (overrides config)")
-    run_p.add_argument("--music", help="Music file or folder (overrides config)")
+    run_p.add_argument("--music", help="Music folder (overrides [music].music_dir)")
     run_p.add_argument(
         "--director", choices=("auto", "rules", "claude"),
         help="Who makes the edit plan (overrides [director].mode)",

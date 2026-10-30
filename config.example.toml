@@ -19,13 +19,24 @@ height = 1080
 framerate = 60
 
 [render]
-# SSH transport: this PC sends jobs to the render PC and fetches the clips itself.
-# Leave ssh_host empty if you don't use SSH.
+# Where the clips are rendered (rendering launches CS2 and takes over that PC):
+#   "local"  = this PC (CS2 + CS Demo Manager installed here). Simplest.
+#   "ssh"    = a separate render PC; jobs are sent over SSH automatically
+#   "folder" = a separate render PC; jobs go through a shared folder (job_dir),
+#              or by USB stick if job_dir is empty
+# Two-PC setup: see docs/two-pc-setup.md. Check your setup: python main.py doctor
+mode = "local"
+
+# local: path to csdm.cmd. Empty = the default install location
+# (%LOCALAPPDATA%\Programs\cs-demo-manager\csdm.cmd).
+csdm_path = ""
+
+# ssh: this PC sends jobs to the render PC and fetches the clips itself.
 ssh_host = ""                 # e.g. "user@192.168.1.50"
 ssh_key = ""                  # e.g. 'C:\Users\<you>\.ssh\fragsmith_render'
 remote_job_dir = "C:/fragsmith-jobs"
 
-# Alternative: a shared folder (SMB) or a local queue. Empty + empty ssh_host = manual USB.
+# folder: the shared folder (SMB) path. Empty = manual USB transfer.
 job_dir = ""
 
 # Clips with slow-mo (Director segments, headshot micro slow-mo or replay)

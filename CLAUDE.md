@@ -26,11 +26,16 @@ The LLM is used ONLY in step 3, and is optional. Everything else is a
 deterministic script. `anthropic` is imported lazily, so rules mode must keep
 working without the package installed.
 
-## Render PC
-- **Main PC:** everything except rendering.
-- **Render PC (with CS2 + CS Demo Manager):** runs `worker.py` (standard library
-  only), which picks up render jobs from a job folder (SSH, shared folder or
-  USB) and puts raw clips back. See `docs/two-pc-setup.md`.
+## Rendering: one PC or two (`[render].mode`, `render_clips.render_mode`)
+- **`local`:** one PC. `main.py render` calls `worker.render_job()` directly
+  into `runs/<id>/03-raw-clips/` (no queue, no demo copy).
+- **`ssh` / `folder`:** a render PC (with CS2 + CS Demo Manager) runs
+  `worker.py` (standard library only), which picks up jobs from a job folder
+  (SSH, shared folder or USB) and puts raw clips back. See `docs/two-pc-setup.md`.
+- No `mode` in an old config → inferred: `ssh_host` set → ssh, else folder.
+- Both paths share `worker.render_job()`; keep the queue logic in `process_job`.
+- `main.py doctor` checks the setup, `main.py setup` writes `config.toml`
+  (`lib/doctor.py`).
 - NEVER render in parallel — one CS2 window at a time.
 
 ## Fixed rules
