@@ -1,7 +1,7 @@
-"""P21-tester for drop-justeringen i edit_engine + cold open-tidslinjefiksen.
+"""Tests for drop sync in edit_engine + the cold open timeline fix.
 
-Mock-klipp i 720p/30fps (jf. tests/README.md) — motoren skal normalisere.
-Kjør: python tests/test_p21_alignment.py
+Mock clips in 720p/30fps (see tests/README.md); the engine should normalize.
+Run: python tests/test_drop_sync.py
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ FAILS: list[str] = []
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
-    print(f"  {'OK  ' if ok else 'FEIL'} {name}" + (f" — {detail}" if detail else ""))
+    print(f"  {'OK  ' if ok else 'FAIL'} {name}" + (f" — {detail}" if detail else ""))
     if not ok:
         FAILS.append(name)
 
@@ -51,7 +51,7 @@ def make_clip(path: Path, seconds: float) -> None:
 
 
 def cfg_for_test() -> dict:
-    """Som ekte config, men uten de trege effektene (minterpolate/LUT)."""
+    """Like a real config, but without the slow effects (minterpolate/LUT)."""
     return {
         "effects": {
             "enabled": True,
@@ -76,7 +76,7 @@ def cfg_for_test() -> dict:
             "lowerthird": True,
             "animated_overlays": True,
             "impact_split": True,
-            "instant_replay": False,  # trenger _alt-klipp; ikke tema her
+            "instant_replay": False,  # needs _alt clips; not the topic here
         },
         "editing": {
             "intro_seconds": 2.5,
@@ -88,8 +88,8 @@ def cfg_for_test() -> dict:
 
 
 def build_fixture(tmp: Path):
-    """3 klipp: to vanlige + klimaks (sist). Kills gir zoom/punch/micro-slowmo
-    så simuleringen må regne riktig gjennom hele tidslogikken."""
+    """3 clips: two normal + climax (last). Kills trigger zoom/punch/micro slow-mo
+    so the simulation has to compute correctly through all the timing logic."""
     clips = tmp / "clips"
     clips.mkdir()
     make_clip(clips / "c1.mp4", 8.0)
@@ -107,7 +107,7 @@ def build_fixture(tmp: Path):
             clip_id=cid, start_tick=0, end_tick=int(dur * 64),
             player_steamid="765me", kill_count=len(kills),
             kind=kw.pop("kind", "multikill"), hype_score=7.5,
-            duration_seconds=dur, kills=kills, player_name="Testern",
+            duration_seconds=dur, kills=kills, player_name="Tester",
             round=5, **kw,
         )
 
@@ -118,7 +118,7 @@ def build_fixture(tmp: Path):
     }
     plan = EditPlan(
         demo_path="mock.dem", music_track="mock.mp3",
-        intro_text="TESTERN", outro_text="GG",
+        intro_text="TESTER", outro_text="GG",
         decisions=[
             EditDecision(
                 clip_id="c1", order=1, slowmo_segments=[],
@@ -132,7 +132,7 @@ def build_fixture(tmp: Path):
             EditDecision(
                 clip_id="c3", order=3, slowmo_segments=[],
                 overlay_text="3K", transition_in="speed_ramp",
-                reasoning="klimaks", is_climax=True,
+                reasoning="climax", is_climax=True,
             ),
         ],
         dropped_clip_ids=[],
@@ -167,68 +167,68 @@ def main() -> None:
         cfg = cfg_for_test()
         log = tmp / "ffmpeg.log"
 
-        # -- cold open: glimtene som beat-synken nå må regne med -----------
-        print("cold open (P14) på tidslinja:")
+        # -- cold open: the glimpses the beat sync now has to account for --
+        print("cold open on the timeline:")
         hooks = build_intro_hook(candidates and plan, candidates, clips,
                                  tmp, cfg, log)
         from lib.ffmpeg_util import probe_duration
         hook_s = sum(probe_duration(h) for h in hooks)
-        check("3 glimt bygges", len(hooks) == 3, f"{len(hooks)}")
-        check("samlet glimt-lengde ~0.75 s", 0.6 <= hook_s <= 1.0,
+        check("3 glimpses are built", len(hooks) == 3, f"{len(hooks)}")
+        check("total glimpse length ~0.75 s", 0.6 <= hook_s <= 1.0,
               f"{hook_s:.3f} s")
 
-        # -- naturlig klimaks-start (uten drop-justering) --------------------
+        # -- natural climax start (without drop sync) -----------------------
         base = beats_grid([])
         c0 = _simulate_climax_start(
             plan, candidates, clips, base, cfg, hook_s + 2.5, {}
         )
-        check("simulering finner klimaks-start", c0 is not None)
-        print(f"    naturlig klimaks-start: {c0:.2f} s")
+        check("simulation finds the climax start", c0 is not None)
+        print(f"    natural climax start: {c0:.2f} s")
 
-        # -- spak 1: drop nær naturlig klimaks → intro-justering -------------
-        print("plan_drop_sync, spak 1 (intro):")
-        drop_a = round(round((c0 + 1.5) / 0.5) * 0.5, 3)  # på et beat
+        # -- lever 1: drop near the natural climax → intro adjustment --------
+        print("plan_drop_sync, lever 1 (intro):")
+        drop_a = round(round((c0 + 1.5) / 0.5) * 0.5, 3)  # on a beat
         ds = plan_drop_sync(plan, candidates, clips,
                             beats_grid([drop_a]), cfg, hook_s)
-        check("finner løsning", ds is not None)
+        check("finds a solution", ds is not None)
         if ds:
-            check("metode er intro-justering", ds["method"] == "intro",
+            check("method is intro adjustment", ds["method"] == "intro",
                   ds["method"])
-            check("intro innenfor grensene", 1.5 <= ds["intro_seconds"] <= 6.5,
+            check("intro within the limits", 1.5 <= ds["intro_seconds"] <= 6.5,
                   f"{ds['intro_seconds']} s")
-            check("predikert avvik <= 100 ms",
+            check("predicted error <= 100 ms",
                   abs(ds["predicted_error_ms"]) <= 100,
                   f"{ds['predicted_error_ms']} ms")
-            check("klimaks-id riktig", ds["climax_clip_id"] == "c3")
+            check("climax id correct", ds["climax_clip_id"] == "c3")
 
-            # integrasjon: bygg segmentene og mål FAKTISK posisjon
+            # integration: build the segments and measure the ACTUAL position
             segs, cut_log, flags = build_segments(
                 plan, candidates, clips, tmp / "seg_a", ds["beats"], cfg, log,
                 context={"map": "de_test"},
                 timeline_start=hook_s + ds["intro_seconds"],
             )
             start = actual_climax_start(cut_log, "c3")
-            check("faktisk klimaks-start på droppet (±150 ms)",
+            check("actual climax start on the drop (±150 ms)",
                   start is not None and abs(start - ds["drop_timeline_s"]) <= 0.150,
                   f"start {start:.3f} s vs drop {ds['drop_timeline_s']} s")
-            check("simulering vs faktisk bygging samsvarer (±150 ms)",
+            check("simulation vs actual build agree (±150 ms)",
                   start is not None and abs(start - drop_a
                         - ds["predicted_error_ms"] / 1000) <= 0.150)
 
-        # -- spak 2: drop langt ute → musikk-offset ---------------------------
-        print("plan_drop_sync, spak 2 (musikk-offset):")
+        # -- lever 2: drop far into the track → music offset -----------------
+        print("plan_drop_sync, lever 2 (music offset):")
         drop_b = round(round((c0 + 20.0) / 0.5) * 0.5, 3)
         ds2 = plan_drop_sync(plan, candidates, clips,
                              beats_grid([drop_b]), cfg, hook_s)
-        check("finner løsning", ds2 is not None)
+        check("finds a solution", ds2 is not None)
         if ds2:
-            check("metode er offset", ds2["method"] == "offset", ds2["method"])
+            check("method is offset", ds2["method"] == "offset", ds2["method"])
             check("offset ~20 s", 18.0 <= ds2["music_offset"] <= 22.0,
                   f"{ds2['music_offset']} s")
-            check("predikert avvik <= 100 ms",
+            check("predicted error <= 100 ms",
                   abs(ds2["predicted_error_ms"]) <= 100,
                   f"{ds2['predicted_error_ms']} ms")
-            check("beat-grid er forskjøvet",
+            check("beat grid is shifted",
                   ds2["beats"].get("music_offset_s") == ds2["music_offset"])
 
             segs, cut_log2, _ = build_segments(
@@ -237,30 +237,30 @@ def main() -> None:
                 timeline_start=hook_s + ds2["intro_seconds"],
             )
             start2 = actual_climax_start(cut_log2, "c3")
-            check("faktisk klimaks-start på droppet (±150 ms)",
+            check("actual climax start on the drop (±150 ms)",
                   start2 is not None
                   and abs(start2 - ds2["drop_timeline_s"]) <= 0.150,
                   f"start {start2:.3f} s vs drop {ds2['drop_timeline_s']} s")
 
-        # -- fallback: ingen drops / drop_sync av ----------------------------
+        # -- fallback: no drops / drop_sync off -----------------------------
         print("fallback:")
-        check("ingen drops → None",
+        check("no drops → None",
               plan_drop_sync(plan, candidates, clips, beats_grid([]),
                              cfg, hook_s) is None)
         cfg_off = {**cfg, "editing": {**cfg["editing"], "drop_sync": False}}
         check("drop_sync=false → None",
               plan_drop_sync(plan, candidates, clips, beats_grid([drop_a]),
                              cfg_off, hook_s) is None)
-        # drop som ikke kan nås (før filmens start) → None
-        check("uoppnåelig drop → None",
+        # a drop that can't be reached (before the film starts) → None
+        check("unreachable drop → None",
               plan_drop_sync(plan, candidates, clips, beats_grid([2.0]),
                              cfg, hook_s) is None)
 
     print()
     if FAILS:
-        print(f"FEILET: {len(FAILS)}: {FAILS}")
+        print(f"FAILED: {len(FAILS)}: {FAILS}")
         sys.exit(1)
-    print("Alle P21-justeringstester OK")
+    print("All drop sync tests OK")
 
 
 if __name__ == "__main__":

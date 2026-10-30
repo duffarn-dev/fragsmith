@@ -2,9 +2,9 @@
 
 Run them directly, no pytest needed:
 
-    python tests/test_p20.py
-    python tests/test_p21_beats.py
-    python tests/test_p21_alignment.py
+    python tests/test_highfps.py
+    python tests/test_beats.py
+    python tests/test_drop_sync.py
 
 ## Patterns worth reusing
 

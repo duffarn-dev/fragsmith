@@ -1,29 +1,29 @@
-"""Steg 5: Beat-analyse av valgt musikkspor (librosa) → beats-struktur.
+"""Step 5: beat analysis of the chosen music track (librosa) → beats dict.
 
-Kan kjøre parallelt med rendering (steg 4) — trenger bare musikkfila.
-P21: finner også bass-drop-kandidater (energibaserte) så klimaks-klippet
-kan legges på droppet.
+Can run in parallel with rendering (step 4); it only needs the music file.
+Also finds bass-drop candidates (energy based) so the climax clip can be
+placed on the drop.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-# P21: vinduene rundt et beat som sammenlignes for drop-deteksjon —
-# klassisk drop = stille oppbygging (pre) rett før høy energi (post)
-DROP_WIN_S = 2.0        # sekunder før/etter beatet
-DROP_MIN_RATIO = 1.35   # post-RMS må være minst så mange ganger pre-RMS
-DROP_MIN_GAP_S = 8.0    # to drops nærmere enn dette regnes som samme
+# The windows around a beat that are compared for drop detection.
+# Classic drop = quiet build-up (pre) right before high energy (post)
+DROP_WIN_S = 2.0        # seconds before/after the beat
+DROP_MIN_RATIO = 1.35   # post RMS must be at least this many times pre RMS
+DROP_MIN_GAP_S = 8.0    # two drops closer than this count as the same one
 DROP_MAX_CANDIDATES = 5
 
 
 def _detect_drops(y, sr: int, beat_times: list[float]) -> list[dict]:
-    """P21: energibaserte drop-kandidater, snappet til beats.
+    """Energy-based drop candidates, snapped to beats.
 
-    Et drop-kandidat er et beat der RMS-energien i vinduet ETTER er klart
-    høyere enn i vinduet FØR (oppbygging → smell), og selve etter-vinduet
-    er høyt i sporets egen skala (droppet er en HØY seksjon, ikke bare
-    "mindre stille"). Returnerer inntil DROP_MAX_CANDIDATES, sterkest først,
-    med strength normalisert til 0-1 innen sporet.
+    A drop candidate is a beat where the RMS energy in the window AFTER is
+    clearly higher than in the window BEFORE (build-up → bang), and the
+    after window itself is loud on the track's own scale (the drop is a
+    LOUD section, not just "less quiet"). Returns up to DROP_MAX_CANDIDATES,
+    strongest first, with strength normalized to 0-1 within the track.
     """
     import librosa
     import numpy as np
@@ -35,23 +35,23 @@ def _detect_drops(y, sr: int, beat_times: list[float]) -> list[dict]:
     frame_t = librosa.frames_to_time(np.arange(len(rms)), sr=sr, hop_length=hop)
     median_rms = float(np.median(rms))
 
-    scored: list[tuple[float, float, float]] = []  # (tid, score, ratio)
+    scored: list[tuple[float, float, float]] = []  # (time, score, ratio)
     for bt in beat_times:
         pre = rms[(frame_t >= bt - DROP_WIN_S) & (frame_t < bt)]
         post = rms[(frame_t >= bt) & (frame_t < bt + DROP_WIN_S)]
         if len(pre) < 8 or len(post) < 8:
-            continue  # for nær start/slutt av sporet
+            continue  # too close to the start/end of the track
         pre_m = float(pre.mean())
         post_m = float(post.mean())
         if post_m <= median_rms:
-            continue  # droppet må være en høy seksjon i sporets egen skala
+            continue  # the drop must be a loud section on the track's own scale
         ratio = post_m / max(pre_m, 1e-9)
         if ratio < DROP_MIN_RATIO:
             continue
-        # score vekter både kontrasten (ratio) og hvor høy seksjonen er
+        # score weighs both the contrast (ratio) and how loud the section is
         scored.append((float(bt), ratio * post_m / median_rms, ratio))
 
-    # non-max suppression: behold sterkeste per DROP_MIN_GAP_S-nabolag
+    # non-max suppression: keep the strongest per DROP_MIN_GAP_S neighborhood
     scored.sort(key=lambda d: -d[1])
     kept: list[tuple[float, float, float]] = []
     for t, score, ratio in scored:
@@ -71,7 +71,7 @@ def _detect_drops(y, sr: int, beat_times: list[float]) -> list[dict]:
 
 
 def analyze_beats(track_path: str | Path) -> dict:
-    import librosa  # tung import — holdes lokal
+    import librosa  # heavy import, kept local
     import numpy as np
 
     track_path = Path(track_path)
@@ -88,16 +88,16 @@ def analyze_beats(track_path: str | Path) -> dict:
         "duration_seconds": round(float(len(y) / sr), 3),
         "bpm": round(float(np.atleast_1d(tempo)[0]), 2),
         "beat_times": beat_list,
-        # P21: drop-kandidater (sterkest først); tom liste = ingen tydelig drop
+        # drop candidates (strongest first); empty list = no clear drop
         "drops": _detect_drops(y, sr, beat_list),
     }
 
 
 def shift_beats(beats: dict, offset_s: float) -> dict:
-    """P21: nytt beats-dict der musikken starter offset_s inn i sporet.
+    """New beats dict where the music starts offset_s into the track.
 
-    Alle tider (beats + drops) forskyves med -offset_s; det som faller før
-    tidslinje-null kuttes. bpm/duration beholdes urørt.
+    All times (beats + drops) are shifted by -offset_s; anything that falls
+    before timeline zero is cut. bpm/duration are left untouched.
     """
     if offset_s <= 0:
         return beats
@@ -117,6 +117,6 @@ def shift_beats(beats: dict, offset_s: float) -> dict:
 
 
 def nearest_beat_before(target: float, beats: dict, tolerance: float) -> float | None:
-    """Nærmeste beat <= target innenfor toleransen (vi kan trimme, ikke forlenge)."""
+    """Nearest beat <= target within the tolerance (we can trim, not extend)."""
     candidates = [t for t in beats["beat_times"] if target - tolerance <= t <= target]
     return max(candidates, default=None)

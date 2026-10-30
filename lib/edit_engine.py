@@ -1,10 +1,10 @@
-"""Steg 6: Editing engine — slow-mo/speed-ramps, overlays, beat-justerte
-klippelengder. Rå ffmpeg via subprocess (bevisst valg fremfor moviepy).
+"""Step 6: editing engine. Slow-mo/speed ramps, overlays, beat-aligned
+clip lengths. Raw ffmpeg via subprocess (a deliberate choice over moviepy).
 
-Input:  raw clips (03-raw-clips/<clip_id>.mp4) + edit-plan + beats
+Input:  raw clips (03-raw-clips/<clip_id>.mp4) + edit plan + beats
 Output: 04-segments/NN_<clip_id>.mp4 (uniform 1080p60 h264 + 48k stereo)
-        + cut-logg med beat-avvik per kutt (kravet: ±100 ms verifiseres
-        med øret; tallene logges så de kan sammenlignes)
+        + a cut log with the beat offset per cut (the ±100 ms target is
+        checked by ear; the numbers are logged so they can be compared)
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ ENCODE_ARGS = [
 
 
 def _atempo_chain(speed: float) -> str:
-    """atempo støtter 0.5-2.0 per ledd — kjed for lavere/høyere faktorer."""
+    """atempo supports 0.5-2.0 per link, so chain it for lower/higher factors."""
     parts: list[float] = []
     remaining = speed
     while remaining < 0.5:
@@ -47,10 +47,10 @@ def _speed_parts(
     decision: EditDecision,
     extra_slow: list[tuple[float, float, float]] = (),
 ) -> list[tuple[float, float, float]]:
-    """Del klippet i (start, slutt, hastighet)-deler som dekker hele varigheten.
+    """Split the clip into (start, end, speed) parts covering the whole duration.
 
-    extra_slow: ekstra (start, slutt, faktor)-markører utenom Directors plan —
-    brukes av P10 mikro-slowmo på headshots.
+    extra_slow: extra (start, end, factor) markers outside the Director's
+    plan, used by the micro slow-mo on headshots.
     """
     markers: list[tuple[float, float, float]] = []
     if decision.transition_in == "speed_ramp":
@@ -70,7 +70,7 @@ def _speed_parts(
     parts: list[tuple[float, float, float]] = []
     cursor = 0.0
     for start, end, speed in markers:
-        start = max(start, cursor)  # overlapp: senere segment vinner ikke bakover
+        start = max(start, cursor)  # overlap: a later segment doesn't win backward
         if start >= end:
             continue
         if start > cursor:
@@ -85,12 +85,13 @@ def _speed_parts(
 def source_to_output_time(
     t: float, parts: list[tuple[float, float, float]]
 ) -> float:
-    """P1: mapp et tidspunkt i KILDE-klippet til tid i output-tidslinja.
+    """Map a point in time in the SOURCE clip to time in the output timeline.
 
-    KillMark.offset_s er i kilde-tid; slow-mo/ramper strekker tidslinja, så
-    et drap på 5.0 s i kilden lander senere i output når noe før det går i
-    slow-mo. Effekter som skal treffe et drap (P4/P10/P11/P12) MÅ mappe
-    offset gjennom denne, med de samme parts som _build_filter fikk.
+    KillMark.offset_s is in source time; slow-mo/ramps stretch the timeline,
+    so a kill at 5.0 s in the source lands later in the output when
+    something before it is in slow-mo. Effects that must hit a kill (freeze,
+    headshot punch, kill counter, impact split) MUST map the offset through
+    this, with the same parts that _build_filter got.
     """
     out = 0.0
     for start, end, speed in parts:
@@ -105,11 +106,11 @@ def source_to_output_time(
 def _split_parts_at(
     parts: list[tuple[float, float, float]], t: float
 ) -> tuple[list[tuple[float, float, float]], int]:
-    """P4: del parts ved kilde-tid t og returner (parts, freeze-innsettingsindeks).
+    """Split parts at source time t and return (parts, freeze insert index).
 
-    Indeksen er hvor mange deler som ligger FØR t — freeze-frame-kjeden i
-    _build_filter settes inn der. Ligger t < 0.02 s fra en eksisterende
-    grense splittes ikke (delsegmenter under ~1 frame er ubrukelige).
+    The index is how many parts lie BEFORE t; the freeze-frame chain in
+    _build_filter is inserted there. If t is < 0.02 s from an existing
+    boundary, nothing is split (sub-segments under ~1 frame are useless).
     """
     out: list[tuple[float, float, float]] = []
     for start, end, speed in parts:
@@ -122,19 +123,19 @@ def _split_parts_at(
     return out, idx
 
 
-RAMP_STEPS = 3      # delsegmenter per hastighetsovergang (spec P3: 2-4)
-RAMP_HALF_S = 0.15  # kilde-tid som stjeles fra hver side av grensa
-MIN_STEP_S = 0.04   # rampesteg må ikke bli < ~2 frames ved 60 fps
+RAMP_STEPS = 3      # sub-segments per speed transition (2-4 works well)
+RAMP_HALF_S = 0.15  # source time taken from each side of the boundary
+MIN_STEP_S = 0.04   # a ramp step must not be < ~2 frames at 60 fps
 
 
 def _eased_parts(
     parts: list[tuple[float, float, float]],
 ) -> list[tuple[float, float, float]]:
-    """P3: myke speed-ramps — erstatt harde hastighetshopp med korte
-    interpolerte rampesteg rundt grensa (f.eks. 1.0 → 0.85 → 0.7 → 0.55 → 0.4).
+    """Smooth speed ramps: replace hard speed jumps with short interpolated
+    ramp steps around the boundary (e.g. 1.0 → 0.85 → 0.7 → 0.55 → 0.4).
 
-    Stjeler inntil RAMP_HALF_S fra hver side (maks 40 % av nabodelens lengde).
-    Blir stegene for korte (< MIN_STEP_S) beholdes grensa hard.
+    Takes up to RAMP_HALF_S from each side (max 40% of the neighbor part's
+    length). If the steps get too short (< MIN_STEP_S), the boundary stays hard.
     """
     if len(parts) < 2:
         return parts
@@ -174,10 +175,10 @@ def _eased_parts(
 def _effects_filters(
     effects: dict, beat_ctx: dict | None
 ) -> list[str]:
-    """Effektkjede (før tekst-overlay): grade, beat-zoom, wobble, vignett.
+    """Effect chain (before text overlays): grade, beat zoom, wobble, vignette.
 
-    Alt skaleres av [effects].intensity. Beat-zoom bruker musikkens faktiske
-    BPM/fase så pulsen treffer beatene.
+    Everything is scaled by [effects].intensity. Beat zoom uses the music's
+    actual BPM/phase so the pulse hits the beats.
     """
     if not effects.get("enabled", True):
         return []
@@ -191,13 +192,13 @@ def _effects_filters(
         vf.append(f"vibrance=intensity={0.25 * k:.3f}")
         vf.append(f"unsharp=5:5:{0.3 * k:.2f}")
 
-    # P5: LUT-grading (.cube) — eksistens sjekkes i build_segments (flagg)
+    # LUT grading (.cube); existence is checked in build_segments (flag)
     lut = str(effects.get("lut", "") or "")
     if lut and k > 0:
         lut_path = Path(lut).as_posix().replace(":", "\\:")
         vf.append(f"lut3d=file='{lut_path}'")
 
-    # P5: film grain — temporal støy, skalert av intensity
+    # film grain: temporal noise, scaled by intensity
     grain = max(0.0, float(effects.get("grain", 0.0)))
     if grain > 0 and k > 0:
         vf.append(f"noise=alls={min(100.0, grain * 12 * k):.1f}:allf=t")
@@ -206,8 +207,8 @@ def _effects_filters(
         amp = 0.035 * k * float(effects.get("beat_zoom_strength", 1.0))
         p = beat_ctx["period"]
         ph = beat_ctx["phase"]
-        # tid siden forrige beat: u = mod(t - fase + P, P); zoom-puls som
-        # slår til på beatet og dør ut eksponentielt
+        # time since the previous beat: u = mod(t - phase + P, P); a zoom
+        # pulse that hits on the beat and decays exponentially
         expr = (
             f"1+{amp:.4f}*exp(-7*mod(on/60-{ph:.3f}+{p:.4f},{p:.4f})/{p:.4f})"
         )
@@ -228,8 +229,8 @@ def _effects_filters(
 
 
 def _max_tilt_degrees(zoom: float) -> float:
-    """Største tilt-vinkel der zoom-beskjæringen dekker de svarte hjørnene
-    fra rotate (16:9): cos(θ) + (W/H)·sin(θ) <= zoom, minus 1° margin."""
+    """Largest tilt angle where the zoom crop covers the black corners from
+    rotate (16:9): cos(θ) + (W/H)·sin(θ) <= zoom, minus a 1° margin."""
     ratio = 1920 / 1080
     r = math.hypot(1.0, ratio)
     if zoom >= r:
@@ -238,18 +239,19 @@ def _max_tilt_degrees(zoom: float) -> float:
 
 
 def _kill_punch_filters(kill_fx: dict, effects: dict) -> list[str]:
-    """Dyp zoom inn på crosshair (bildesenter) på kill-tidspunktet, valgfritt
-    kombinert med dutch tilt. Tider er i OUTPUT-tid (via source_to_output_time).
+    """Deep zoom into the crosshair (frame center) at the moment of the kill,
+    optionally combined with a dutch tilt. Times are in OUTPUT time (via
+    source_to_output_time).
 
-    Konvolutt: zoom rammer inn drapet — full ~0.05 s FØR kill, holdes ~0.4 s,
-    snapper ut på ~0.18 s. Tilten følger zoomen med brattere kurve (^3.5 mot
-    ^2) så beskjæringen alltid dekker rotasjons-hjørnene underveis.
+    Envelope: the zoom frames the kill. Full ~0.05 s BEFORE the kill, held
+    ~0.4 s, snaps out in ~0.18 s. The tilt follows the zoom with a steeper
+    curve (^3.5 vs ^2) so the crop always covers the rotation corners.
     """
     t_kill = kill_fx["t"]
     zmax = max(1.1, float(effects.get("kill_zoom_factor", 1.7)))
     dz = zmax - 1.0
-    # P4: faller en freeze-frame på samme kill holdes zoomen gjennom hele
-    # frysen (hold_until) før snap-out — ellers standard 0.4 s hold
+    # if a freeze frame falls on the same kill, the zoom is held through the
+    # whole freeze (hold_until) before snapping out; otherwise a 0.4 s hold
     t0, t1 = t_kill - 0.40, t_kill - 0.05
     t2 = float(kill_fx.get("hold_until", t_kill + 0.40))
     t3 = t2 + 0.18
@@ -281,10 +283,11 @@ def _kill_punch_filters(kill_fx: dict, effects: dict) -> list[str]:
 
 
 def _headshot_punch_filter(punches: list[dict], _effects: dict) -> str:
-    """P10: liten zoom-punch på headshots — ease-in ~0.35 s til maks (< ~1.25×),
-    kort hold over drapet, snap ut på 2-3 frames. Alle punch-er samles i ÉN
-    zoompan (hver konvolutt er 0 utenfor sitt vindu), sentrert på crosshair.
-    Tider er i OUTPUT-tid (via source_to_output_time + evt. freeze-skift)."""
+    """Small zoom punch on headshots: ease in ~0.35 s to max (< ~1.25×), a
+    short hold over the kill, snap out in 2-3 frames. All punches are
+    combined in ONE zoompan (each envelope is 0 outside its window), centered
+    on the crosshair. Times are in OUTPUT time (via source_to_output_time +
+    any freeze shift)."""
     tv = "on/60"
     envs: list[str] = []
     for p in punches:
@@ -318,46 +321,46 @@ def _build_filter(
     impacts: list[float] | None = None,
     src_fps: float = 60.0,
 ) -> tuple[str, str, str]:
-    """filter_complex: trim/setpts/atempo per del + concat + effekter +
-    overlay + inngangsovergang. src_fps: kildens framerate (P20) — høy-fps-
-    kilder bremses med ekte frames, uten minterpolate."""
+    """filter_complex: trim/setpts/atempo per part + concat + effects +
+    overlay + entry transition. src_fps: the source frame rate; high-fps
+    sources are slowed down with real frames, without minterpolate."""
     punch = effects.get("enabled", True) and effects.get("slowmo_punch", True)
     smooth = (
         effects.get("enabled", True)
         and effects.get("smooth_slowmo", False)
-        and src_fps <= HIGHFPS_THRESHOLD  # P20: ekte frames slår interpolasjon
+        and src_fps <= HIGHFPS_THRESHOLD  # real frames beat interpolation
     )
     k = max(0.0, float(effects.get("intensity", 1.0)))
 
     chains: list[str] = []
-    labels: list[tuple[str, str]] = []  # (video, audio) i concat-rekkefølge
+    labels: list[tuple[str, str]] = []  # (video, audio) in concat order
     for i, (start, end, speed) in enumerate(parts):
         vchain = (
             f"[0:v]trim=start={start:.3f}:end={end:.3f},"
             f"setpts=(PTS-STARTPTS)/{speed:.4f}"
         )
         if smooth and speed < 0.95:
-            # P8: optical flow-interpolasjon → jevn slow-mo i stedet for
-            # frame-duplisering. Kun på slow-deler — minterpolate er treg
-            # og gir artefakter på røyk/partikler (se learnings_runtime.md).
+            # Optical flow interpolation → smooth slow-mo instead of
+            # duplicated frames. Only on slow parts: minterpolate is slow
+            # and causes artifacts on smoke/particles (see learnings_runtime.md).
             vchain += ",minterpolate=fps=60:mi_mode=mci"
-        # normaliser oppløsning OG fps FØR concat — punch-zoompan låser sin
-        # del til 1080p, concat krever samme størrelse, og alle zoompan-
-        # uttrykk etter concat regner tid som on/60 (kilder ≠ 60 fps ville
-        # ellers fått effektene på halv/dobbel tid)
+        # normalize resolution AND fps BEFORE concat: the punch zoompan locks
+        # its part to 1080p, concat requires the same size, and all zoompan
+        # expressions after concat treat time as on/60 (sources ≠ 60 fps
+        # would otherwise get the effects at half/double speed)
         vchain += (
             ",fps=60,scale=1920:1080:force_original_aspect_ratio=decrease,"
             "pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
         )
-        # P10: mikro-slowmo-deler har egen headshot-punch — push-in oppå
-        # ville stablet to zoomer på samme drap
+        # micro slow-mo parts have their own headshot punch; a push-in on
+        # top would stack two zooms on the same kill
         in_micro = any(
             start >= ms - 1e-3 and end <= me + 1e-3 for ms, me in punch_skip
         )
-        # lengdekravet holder push-in unna korte rampesteg fra _eased_parts
-        # (zoom som restarter per steg ville gitt synlig rykk)
+        # the length requirement keeps push-in off short ramp steps from
+        # _eased_parts (a zoom restarting per step would cause a visible jerk)
         if punch and speed < 1.0 and k > 0 and (end - start) >= 0.25 and not in_micro:
-            # push-in under slow-mo: sakte zoom fra 1.02 til ~1.02+0.12*k
+            # push-in during slow-mo: slow zoom from 1.02 to ~1.02+0.12*k
             out_dur = max(0.1, (end - start) / speed)
             rate = (0.12 * k) / (out_dur * 60)
             vchain += (
@@ -373,9 +376,10 @@ def _build_filter(
         labels.append((f"[v{i}]", f"[a{i}]"))
 
     if freeze:
-        # P4: freeze-frame — ta én frame på kill-tidspunktet, klon den i
-        # freeze-varigheten (tpad), stum lyd under. Settes inn i concat-rekka
-        # på after_idx (fra _split_parts_at) så den lander PÅ drapet.
+        # Freeze frame: take one frame at the moment of the kill, clone it for
+        # the freeze duration (tpad), silent audio underneath. Inserted into
+        # the concat order at after_idx (from _split_parts_at) so it lands
+        # ON the kill.
         ft, fdur = freeze["src_t"], freeze["dur"]
         chains.append(
             f"[0:v]trim=start={ft:.3f}:end={ft + 0.1:.3f},setpts=PTS-STARTPTS,"
@@ -392,30 +396,30 @@ def _build_filter(
     inputs = "".join(v + a for v, a in labels)
     chains.append(f"{inputs}concat=n={len(labels)}:v=1:a=1[vc][ac]")
 
-    # (oppløsning er allerede normalisert per del, før concat)
+    # (resolution is already normalized per part, before concat)
     vf = _effects_filters(effects, beat_ctx)
     if hs_punches:
-        # P10: headshot-punch før kill-punch — begge er senter-zoom, og
-        # utvalget i build_segments sikrer at vinduene ikke overlapper
+        # headshot punch before kill punch: both are center zooms, and the
+        # selection in build_segments makes sure the windows don't overlap
         vf.append(_headshot_punch_filter(hs_punches, effects))
     if kill_fx:
-        # kill-punch FØR tekst/letterbox: teksten skal ikke rotere med,
-        # og letterbox-båndene skal ligge i ro over det tiltede bildet
+        # kill punch BEFORE text/letterbox: the text shouldn't rotate along,
+        # and the letterbox bars should stay still over the tilted image
         vf += _kill_punch_filters(kill_fx, effects)
     if impacts:
-        # P12: 3 frames kroma-forskyvning på store drap — "impact".
-        # chromashift, IKKE rgbashift: rgbashift tvinger YUV→RGB→YUV på HELE
-        # klippet (formatforhandling skjer uavhengig av enable) og taper
-        # farge overalt; chromashift jobber i nativ yuv420p. Etter kill-punch
-        # (forskyver det zoomede bildet), før tekstlagene.
+        # 3 frames of chroma shift on big kills: "impact".
+        # chromashift, NOT rgbashift: rgbashift forces YUV→RGB→YUV on the
+        # WHOLE clip (format negotiation happens regardless of enable) and
+        # loses color everywhere; chromashift works in native yuv420p. After
+        # the kill punch (shifts the zoomed image), before the text layers.
         shift = max(2, round(5 * k))
         cond = "+".join(f"between(t,{t:.3f},{t + 0.05:.3f})" for t in impacts)
         vf.append(f"chromashift=cbh=-{shift}:crh={shift}:enable='{cond}'")
     if decision.overlay_text:
         text = drawtext_escape(decision.overlay_text)
         if effects.get("enabled", True) and effects.get("animated_overlays", False):
-            # P9: teksten glir opp og fader inn (0.4-0.65 s), fader ut mot
-            # 3.2 s — i stedet for hard på/av
+            # the text slides up and fades in (0.4-0.65 s), fades out toward
+            # 3.2 s, instead of a hard on/off
             alpha = (
                 "if(lt(t,0.4),0,if(lt(t,0.65),(t-0.4)/0.25,"
                 "if(lt(t,2.9),1,max(0,(3.2-t)/0.3))))"
@@ -435,9 +439,9 @@ def _build_filter(
                 f":enable='between(t,0.4,3.2)'"
             )
     if counter:
-        # P11: kill-teller som ticker opp på hvert drap (output-tid) med
-        # alpha-pop per tikk. Venstre side — kolliderer ikke med killfeed
-        # (topp høyre), overlay_text (senter) eller lowerthird (nede venstre).
+        # Kill counter that ticks up on every kill (output time) with an
+        # alpha pop per tick. Left side: doesn't collide with the killfeed
+        # (top right), overlay_text (center) or the lower third (bottom left).
         for i, (start, label) in enumerate(counter):
             end = counter[i + 1][0] if i + 1 < len(counter) else 9999.0
             vf.append(
@@ -449,8 +453,8 @@ def _build_filter(
                 f":alpha='min(1,(t-{start:.3f})/0.15)'"
             )
     if lowerthird:
-        # P7: diskret kontekstlinje (kart · runde · 1vX) nede til venstre,
-        # kort fade inn/ut. Løftes over bunn-båndet når letterbox er aktiv.
+        # Subtle context line (map · round · 1vX) in the bottom left, short
+        # fade in/out. Raised above the bottom bar when letterbox is active.
         y = 870 if letterbox else 1010
         vf.append(
             f"drawtext=fontfile='{FONT_FILE}'"
@@ -463,16 +467,17 @@ def _build_filter(
     if decision.transition_in == "fade":
         vf.append("fade=t=in:st=0:d=0.5")
     elif effects.get("enabled", True) and effects.get("flash_transitions", True):
-        # hvit blits inn i klippet der Director valgte cut/speed_ramp
+        # white flash into the clip where the Director chose cut/speed_ramp
         vf.append("fade=t=in:st=0:d=0.13:color=white")
     if not vf:
-        vf = ["null"]  # tom filterkjede er ugyldig i filter_complex
+        vf = ["null"]  # an empty filter chain is invalid in filter_complex
     if letterbox:
-        # P6 (justert 2026-07-05): KUN bunn-bånd (160 px), glir inn 0.4 s.
-        # Toppbåndet dekket killfeeden — kills gjennom røyk/vegg ble
-        # uleselige. Via overlay, IKKE drawbox: i drawbox-uttrykk
-        # betyr `t` tykkelse, ikke tid — kun overlay har tidsanimert posisjon.
-        # NB: overlay_text ligger på y=h*0.72 (~777) og klarerer båndet (920).
+        # (Adjusted 2026-07-05) ONLY a bottom bar (160 px), slides in 0.4 s.
+        # The top bar covered the killfeed, so kills through smoke/walls
+        # became unreadable. Done with overlay, NOT drawbox: in drawbox
+        # expressions `t` means thickness, not time; only overlay has a
+        # time-animated position.
+        # Note: overlay_text sits at y=h*0.72 (~777) and clears the bar (920).
         slide = "min(160,160*t/0.4)"
         chains.append(f"[vc]{','.join(vf)}[vfx]")
         chains.append("color=black:s=1920x160:r=60[lbb]")
@@ -482,22 +487,22 @@ def _build_filter(
     return ";".join(chains), "[vout]", "[ac]"
 
 
-# P19: instant replay — rewind-lengde, slow-mo-vindu rundt drapet og faktor
-REPLAY_REWIND_S = 1.0    # rewind-snuttens lengde i output
-REPLAY_PRE_S = 1.8       # kilde-sekunder FØR drapet i replayen
-REPLAY_POST_S = 1.2      # kilde-sekunder ETTER drapet
-REPLAY_FACTOR = 0.45     # avspillingshastighet i replayen
+# Instant replay: rewind length, slow-mo window around the kill, and factor
+REPLAY_REWIND_S = 1.0    # length of the rewind snippet in the output
+REPLAY_PRE_S = 1.8       # source seconds BEFORE the kill in the replay
+REPLAY_POST_S = 1.2      # source seconds AFTER the kill
+REPLAY_FACTOR = 0.45     # playback speed in the replay
 
 
 def pick_replay_clip(plan: EditPlan, candidates_by_id: dict, cfg: dict):
-    """P19: hvilket klipp får instant replay av siste drap. Returnerer
-    (clip_id, KillMark) eller None.
+    """Which clip gets an instant replay of its last kill. Returns
+    (clip_id, KillMark) or None.
 
-    Director kan velge eksplisitt via effects_on=["replay"] (maks ett,
-    validert). Ellers: klimaks-klippet, hvis det er stort nok (3+ kills
-    eller clutch) og ikke har effects_off=["replay"]. Brukes BÅDE av
-    render-siden (P17: offer-POV-vinkel) og editing (replay-segmentet) —
-    de MÅ være enige om valget.
+    The Director can choose explicitly via effects_on=["replay"] (max one,
+    validated). Otherwise: the climax clip, if it's big enough (3+ kills
+    or a clutch) and doesn't have effects_off=["replay"]. Used BOTH by the
+    render side (victim-POV angle) and editing (the replay segment); they
+    MUST agree on the choice.
     """
     fx = cfg.get("effects", {})
     if not (fx.get("enabled", True) and fx.get("instant_replay", False)):
@@ -517,7 +522,7 @@ def pick_replay_clip(plan: EditPlan, candidates_by_id: dict, cfg: dict):
         if cand is None or (
             cand.kill_count < 3 and not (cand.clutch_vs and cand.clutch_vs >= 2)
         ):
-            return None  # replay på et svakt klipp er verre enn ingen replay
+            return None  # a replay on a weak clip is worse than no replay
     kills = getattr(candidates_by_id.get(target.clip_id), "kills", None)
     if not kills:
         return None
@@ -535,12 +540,12 @@ def _build_replay_segment(
     log_path: Path,
     label: str,
 ) -> float:
-    """P19: bygg rewind + slow-mo-replay som eget segment.
+    """Build rewind + slow-mo replay as a separate segment.
 
-    main_seg: det ferdige klimaks-segmentet (rewind tas fra output-enden,
-    tilbake til drapet). replay_src: offer-POV-klippet (_alt) eller samme
-    POV som fallback — samme tick-range, så kill_offset_s gjelder begge.
-    Returnerer faktisk varighet.
+    main_seg: the finished climax segment (the rewind runs from the output
+    end back to the kill). replay_src: the victim-POV clip (_alt) or the
+    same POV as fallback; same tick range, so kill_offset_s applies to both.
+    Returns the actual duration.
     """
     src_dur = probe_duration(replay_src)
     w0 = max(0.0, kill_offset_s - REPLAY_PRE_S)
@@ -552,7 +557,7 @@ def _build_replay_segment(
     smooth = (
         effects.get("enabled", True)
         and effects.get("smooth_slowmo", False)
-        and probe_fps(replay_src) <= HIGHFPS_THRESHOLD  # P20
+        and probe_fps(replay_src) <= HIGHFPS_THRESHOLD
     )
     replay_v = (
         f"[1:v]trim=start={w0:.3f}:end={w1:.3f},"
@@ -567,7 +572,7 @@ def _build_replay_segment(
     vf = _effects_filters(effects, None)
     if vf:
         replay_v += "," + ",".join(vf)
-    # REPLAY-merke: øverst i midten (killfeed bor øverst til høyre), puls
+    # REPLAY badge: top center (the killfeed lives in the top right), pulsing
     replay_v += (
         f",drawtext=fontfile='{FONT_FILE}':text='REPLAY':expansion=none"
         f":fontsize=72:fontcolor=white:borderw=5:bordercolor=black"
@@ -575,7 +580,7 @@ def _build_replay_segment(
     )
 
     chains = [
-        # rewind: fra rett før drapet til segmentslutt, reversert i høyt tempo
+        # rewind: from just before the kill to the segment end, reversed at high speed
         f"[0:v]trim=start={rew_from:.3f}:end={seg_duration:.3f},"
         f"setpts=PTS-STARTPTS,reverse,setpts=PTS/{rew_speed:.4f},fps=60,"
         f"scale=1920:1080:force_original_aspect_ratio=decrease,"
@@ -603,8 +608,8 @@ def _build_replay_segment(
 
 
 def _choose(name: str, default: bool, d_on: set, d_off: set) -> bool:
-    """P18: Directors per-klipp-valg. effects_off vinner, effects_on
-    overstyrer standardREGELEN — men aldri config-masterbryteren."""
+    """The Director's per-clip choices. effects_off wins, effects_on
+    overrides the default RULE, but never the config master switch."""
     if name in d_off:
         return False
     if name in d_on:
@@ -613,12 +618,12 @@ def _choose(name: str, default: bool, d_on: set, d_off: set) -> bool:
 
 
 def _timing_plan(decision: EditDecision, cand, duration: float, fx: dict) -> dict:
-    """Alt som påvirker segmentets LENGDE, samlet ett sted: speed-parts
-    (Director-slowmo + P10-mikro + P3-ramper), P4-freeze og out_duration.
+    """Everything that affects the segment's LENGTH, in one place: speed parts
+    (Director slow-mo + micro slow-mo + ramps), freeze frame and out_duration.
 
-    Brukes av BÅDE build_segments og P21-drop-simuleringen — ble dette
-    beregnet to steder hver for seg, ville simulert og faktisk tidslinje
-    drive fra hverandre.
+    Used by BOTH build_segments and the drop-sync simulation. If this were
+    computed separately in two places, the simulated and actual timelines
+    would drift apart.
     """
     fx_on = fx.get("enabled", True)
     kills = getattr(cand, "kills", None) if cand else None
@@ -630,9 +635,9 @@ def _timing_plan(decision: EditDecision, cand, duration: float, fx: dict) -> dic
         "kill_zoom", True, d_on, d_off
     )
 
-    # P10: velg headshots som får punch (kildetid). Siste kill hoppes
-    # over når kill_zoom er på (den har alt sin egen, dypere zoom), og
-    # punch-er tettere enn 1.5 s stables ikke.
+    # Pick the headshots that get a punch (source time). The last kill is
+    # skipped when kill_zoom is on (it already has its own, deeper zoom),
+    # and punches closer than 1.5 s apart aren't stacked.
     hs_marks: list[float] = []
     if (
         fx_on and fx.get("headshot_punch", False) and kills and k > 0
@@ -650,8 +655,8 @@ def _timing_plan(decision: EditDecision, cand, duration: float, fx: dict) -> dic
             hs_marks.append(km.offset_s)
             prev = km.offset_s
 
-    # P10: mikro-slowmo rundt hver punch — hopp over headshots som
-    # allerede ligger i et Director-slowmo-segment
+    # micro slow-mo around each punch; skip headshots that are already
+    # inside a Director slow-mo segment
     micro: list[tuple[float, float, float]] = []
     if hs_marks and fx.get("headshot_micro_slowmo", True):
         for t in hs_marks:
@@ -667,12 +672,12 @@ def _timing_plan(decision: EditDecision, cand, duration: float, fx: dict) -> dic
 
     parts = _speed_parts(duration, decision, micro)
     if fx_on and fx.get("eased_ramps", True):
-        # P3: må skje FØR out_duration — beat-snap og filter skal se
-        # nøyaktig samme deler.
+        # must happen BEFORE out_duration: the beat snap and the filter must
+        # see exactly the same parts.
         parts = _eased_parts(parts)
 
-    # P4: freeze-frame på siste drap i ace/høy multikill — "punktum".
-    # Varigheten telles inn i out_duration så beat-snappen holder.
+    # Freeze frame on the last kill of an ace/big multikill: a "full stop".
+    # The duration is counted into out_duration so the beat snap holds.
     freeze = None
     if fx_on and fx.get("freeze_on_finish", False) and kills:
         big_finish = cand.kind == "ace" or (
@@ -704,20 +709,21 @@ def _timing_plan(decision: EditDecision, cand, duration: float, fx: dict) -> dic
     }
 
 
-# P20: kilder over dette regnes som høy-fps-rendret — slow-mo bruker da
-# ekte frames (setpts) og minterpolate hoppes over
+# Sources above this count as high-fps renders: slow-mo then uses real
+# frames (setpts) and minterpolate is skipped
 HIGHFPS_THRESHOLD = 61.0
 
 
 def wants_high_fps(decision: EditDecision, cand, fx: dict) -> bool:
-    """P20: skal dette klippet rendres i høy fps? Sant hvis noe i klippet
-    kommer til å gå i slow-mo: Director-segmenter eller P10-mikro-slowmo.
-    (Replay-klippet håndteres i tillegg av render-siden — replayen bremser
-    alt-vinkelen uansett.)
+    """Should this clip be rendered at high fps? True if anything in the clip
+    will be in slow-mo: Director segments or the headshot micro slow-mo.
+    (The replay clip is also handled by the render side, since the replay
+    slows down the alt angle regardless.)
 
-    Deles av render-siden (steg 4, FØR klippet finnes) og fasestopp-
-    estimatet. Bruker cand.duration_seconds siden råklippet ikke finnes
-    ennå — samme _timing_plan-logikk som steg 6 bruker på ekte varighet.
+    Shared by the render side (step 4, BEFORE the clip exists) and the
+    phase-stop estimate. Uses cand.duration_seconds since the raw clip
+    doesn't exist yet; the same _timing_plan logic step 6 uses on the
+    actual duration.
     """
     if decision.slowmo_segments:
         return True
@@ -728,7 +734,7 @@ def wants_high_fps(decision: EditDecision, cand, fx: dict) -> bool:
 
 
 def _climax_clip_id(plan: EditPlan) -> str | None:
-    """P18-regelen: Directors is_climax vinner, ellers siste klipp."""
+    """The Director's is_climax wins, otherwise the last clip."""
     decisions = sorted(plan.decisions, key=lambda d: d.order)
     if not decisions:
         return None
@@ -745,9 +751,9 @@ def _simulate_climax_start(
     timeline_start: float,
     dur_cache: dict,
 ) -> float | None:
-    """P21: forutsi hvor på tidslinja klimaks-klippet starter, med samme
-    snapping-regler som build_segments (ren aritmetikk + ffprobe, ingen
-    encoding). Returnerer None hvis klimaks-råklippet mangler."""
+    """Predict where on the timeline the climax clip starts, using the same
+    snapping rules as build_segments (pure arithmetic + ffprobe, no
+    encoding). Returns None if the climax raw clip is missing."""
     editing = cfg.get("editing", {})
     fx = cfg.get("effects", {})
     tolerance = float(editing.get("beat_tolerance_seconds", 0.75))
@@ -762,7 +768,7 @@ def _simulate_climax_start(
         if not clip.exists():
             if d.clip_id == target_id:
                 return None
-            continue  # build_segments hopper også over manglende klipp
+            continue  # build_segments also skips missing clips
         if d.clip_id == target_id:
             return pos
         if d.clip_id not in dur_cache:
@@ -777,7 +783,7 @@ def _simulate_climax_start(
             if snapped is not None and snapped - pos >= 2.0
             else desired_end
         )
-        # sjelden: replay på et klipp FØR klimaks skyver tidslinja
+        # rare: a replay on a clip BEFORE the climax pushes the timeline
         if replay_pick and replay_pick[0] == d.clip_id:
             src = clips_dir / f"{d.clip_id}_alt.mp4"
             if not src.exists():
@@ -791,8 +797,8 @@ def _simulate_climax_start(
     return None
 
 
-# P21: intro-kortets lengde er en spak for drop-justering — grensene her
-# holder kortet innenfor det som ser bevisst ut (ikke for kort, ikke dødtid)
+# The intro card's length is a lever for drop sync. These limits keep the
+# card within what looks intentional (not too short, no dead time)
 DROP_INTRO_MIN_S = 1.5
 DROP_INTRO_EXTRA_MAX_S = 4.0
 DROP_CONVERGED_S = 0.02
@@ -806,16 +812,16 @@ def plan_drop_sync(
     cfg: dict,
     base_start: float,
 ) -> dict | None:
-    """P21: velg drop-kandidat + justering slik at klimaks-klippet STARTER
-    på musikkens drop (action og musikk topper sammen).
+    """Pick a drop candidate + adjustment so the climax clip STARTS on the
+    music's drop (action and music peak together).
 
-    base_start: tidslinjeposisjon der intro-kortet starter (= cold open-
-    glimtenes samlede lengde) — introlengden er selve spak 1.
-    To spaker, prøvd i den rekkefølgen per drop-kandidat (sterkest først):
-      1. intro-justering (±): beholder sporets egen oppbygging fra start
-      2. musikk-offset (+): start sporet lenger ut, for drops langt ute
-    Returnerer dict med beats (evt. forskjøvet), intro_seconds, music_offset
-    og rapport-info — eller None (→ dagens klimaks-til-slutt-oppførsel).
+    base_start: the timeline position where the intro card starts (= the
+    total length of the cold open glimpses); the intro length is lever 1.
+    Two levers, tried in this order per drop candidate (strongest first):
+      1. intro adjustment (±): keeps the track's own build-up from the start
+      2. music offset (+): start the track further in, for drops far in
+    Returns a dict with beats (shifted if needed), intro_seconds,
+    music_offset and report info, or None (→ climax-at-the-end behavior).
     """
     editing = cfg.get("editing", {})
     if not editing.get("drop_sync", False):
@@ -853,11 +859,11 @@ def plan_drop_sync(
             "predicted_error_ms": round(err_s * 1000),
         }
 
-    for drop in drops:  # sterkest først
+    for drop in drops:  # strongest first
         drop_t = float(drop["time_s"])
         r = drop_t - c0
 
-        # Spak 1: intro-justering — droppet ligger nær naturlig klimaks
+        # Lever 1: intro adjustment, the drop is close to the natural climax
         if lo - base_intro - tolerance <= r <= hi - base_intro + tolerance:
             intro = min(hi, max(lo, base_intro + r))
             for _ in range(6):
@@ -875,7 +881,7 @@ def plan_drop_sync(
             if c is not None and abs(c - drop_t) <= tolerance:
                 return result(beats, intro, 0.0, "intro", drop_t, c - drop_t)
 
-        # Spak 2: musikk-offset — droppet ligger langt UT i sporet
+        # Lever 2: music offset, the drop is far INTO the track
         if r > 0:
             off = r
             for _ in range(6):
@@ -908,15 +914,15 @@ def build_segments(
     context: dict | None = None,
     timeline_start: float | None = None,
 ) -> tuple[list[Path], list[dict], list[str]]:
-    """Returnerer (segmentfiler i rekkefølge, cut-logg, flagg).
+    """Returns (segment files in order, cut log, flags).
 
-    context: valgfri demo-kontekst utover kandidatene, i dag kun
-    {"map": "de_inferno"} (brukes av P7-lowerthird)."""
+    context: optional demo context beyond the candidates, currently only
+    {"map": "de_inferno"} (used by the lower third)."""
     editing = cfg.get("editing", {})
     fx = cfg.get("effects", {})
     tolerance = float(editing.get("beat_tolerance_seconds", 0.75))
-    # P21/P14: kalleren kan angi hvor på tidslinja segmentene faktisk starter
-    # (cold open-glimt + evt. drop-justert intro); default som før.
+    # the caller can say where on the timeline the segments actually start
+    # (cold open glimpses + any drop-adjusted intro); default is the intro length.
     timeline_pos = (
         float(editing.get("intro_seconds", 2.5))
         if timeline_start is None
@@ -928,12 +934,12 @@ def build_segments(
     cut_log: list[dict] = []
     flags: list[str] = []
     climax_order = max((d.order for d in plan.decisions), default=0)
-    # P18: har Director pekt ut klimaks eksplisitt, vinner det over
-    # "siste klipp"-regelen
+    # if the Director explicitly picked a climax, it wins over the
+    # "last clip" rule
     climax_ids = {d.clip_id for d in plan.decisions if d.is_climax}
 
-    # P5: manglende LUT-fil skal gi tydelig flagg, ikke ffmpeg-krasj.
-    # Relativ sti ankres i prosjektmappa (jf. sfx_dir), ikke i CWD.
+    # A missing LUT file should give a clear flag, not an ffmpeg crash.
+    # A relative path is anchored in the project folder (like sfx_dir), not the CWD.
     lut = str(fx.get("lut", "") or "")
     if lut:
         lut_path = Path(lut)
@@ -945,7 +951,7 @@ def build_segments(
             flags.append(f"LUT file not found: {lut} — grading runs without a LUT.")
             fx = {**fx, "lut": ""}
 
-    # P19: instant replay — samme utvalg som render-siden gjorde (P17)
+    # instant replay: the same pick the render side made
     replay_pick = pick_replay_clip(plan, candidates_by_id, cfg)
 
     for decision in sorted(plan.decisions, key=lambda d: d.order):
@@ -963,8 +969,8 @@ def build_segments(
         kills = getattr(cand, "kills", None) if cand else None
         k = max(0.0, float(fx.get("intensity", 1.0)))
 
-        # P18: Directors per-klipp-valg (se _choose). Tidslogikken deles
-        # med P21-simuleringen via _timing_plan.
+        # the Director's per-clip choices (see _choose). The timing logic is
+        # shared with the drop-sync simulation via _timing_plan.
         d_on = set(decision.effects_on)
         d_off = set(decision.effects_off)
 
@@ -977,13 +983,13 @@ def build_segments(
         out_duration = tp["out_duration"]
 
         def _out_time(t_src: float) -> float:
-            """Kilde- → output-tid, inkl. skiftet fra en innsatt freeze."""
+            """Source → output time, including the shift from an inserted freeze."""
             t = source_to_output_time(t_src, parts)
             if freeze and t_src > freeze["src_t"] + 1e-6:
                 t += freeze["dur"]
             return t
 
-        # Beat-justering: snapp segmentSLUTT til nærmeste beat (kun trimming)
+        # Beat alignment: snap the segment END to the nearest beat (trimming only)
         desired_end = timeline_pos + out_duration
         snapped = nearest_beat_before(desired_end, beats, tolerance)
         target_duration = out_duration
@@ -997,8 +1003,8 @@ def build_segments(
                 f"beat sync skipped for this cut."
             )
 
-        # Beat-kontekst for effekter: periode + fase (første beat etter
-        # segmentets plassering på tidslinja, relativt til segmentstart)
+        # Beat context for effects: period + phase (the first beat after the
+        # segment's position on the timeline, relative to the segment start)
         period = 60.0 / beats["bpm"] if beats.get("bpm") else None
         beat_ctx = None
         if period:
@@ -1008,7 +1014,7 @@ def build_segments(
             phase = (next_beat - timeline_pos) % period if next_beat else 0.0
             beat_ctx = {"period": period, "phase": phase}
 
-        # P6: letterbox på klimaks — slow-mo-segmenter og clutcher
+        # letterbox on climaxes: slow-mo segments and clutches
         letterbox = (
             fx_on
             and fx.get("letterbox_on_slowmo", False)
@@ -1019,14 +1025,14 @@ def build_segments(
             )
         )
 
-        # Kill-punch: dyp crosshair-zoom på klippets SISTE kill; dutch tilt
-        # kun på filmens klimaks-kill (høyeste order). Tider mappes fra
-        # kilde- til output-tid, og drapet må ligge trygt innenfor det
-        # beat-trimmede segmentet.
+        # Kill punch: deep crosshair zoom on the clip's LAST kill; dutch tilt
+        # only on the film's climax kill (highest order). Times are mapped
+        # from source to output time, and the kill must sit safely inside
+        # the beat-trimmed segment.
         kill_fx = None
         if kill_zoom_active and kills:
             t_out = _out_time(kills[-1].offset_s)
-            # med freeze må både frysen og snap-out få plass før segmentslutt
+            # with a freeze, both the freeze and the snap-out must fit before the segment ends
             room = (freeze["dur"] if freeze else 0.0) + 0.7
             if 0.8 < t_out < target_duration - room:
                 is_climax = (
@@ -1039,10 +1045,10 @@ def build_segments(
                     tilt_deg = float(fx.get("kill_tilt_degrees", 22.0))
                 kill_fx = {"t": t_out, "tilt_deg": tilt_deg}
                 if freeze:
-                    # hold zoomen gjennom frysen, snap ut når bildet våkner
+                    # hold the zoom through the freeze, snap out when the image wakes up
                     kill_fx["hold_until"] = t_out + freeze["dur"] + 0.10
 
-        # P10: punch-tider i output-tid, trygt innenfor trimmet segment
+        # punch times in output time, safely inside the trimmed segment
         hs_punches: list[dict] = []
         strength = max(0.0, float(fx.get("headshot_punch_strength", 1.0)))
         dz = min(0.22, 0.15 * strength * k)
@@ -1052,8 +1058,8 @@ def build_segments(
                 if 0.5 < t_out < target_duration - 0.25:
                     hs_punches.append({"t": t_out, "dz": dz})
 
-        # P11: kill-teller på multikill/ace (>= 3 drap). Siste tikk viser
-        # "4K"/"ACE" — lander den på en P4-freeze blir det stående punktum.
+        # Kill counter on multikills/aces (>= 3 kills). The last tick shows
+        # "4K"/"ACE"; if it lands on a freeze frame it stays as a full stop.
         counter = None
         if (
             fx_on and fx.get("kill_counter", False) and kills
@@ -1071,8 +1077,8 @@ def build_segments(
                 counter.append((t_out, label))
             counter = counter or None
 
-        # P7: kontekstlinje fra Highlight-felt (aldri fra Director) —
-        # manglende felt hoppes over, aldri tom "None"
+        # context line from Highlight fields (never from the Director);
+        # missing fields are skipped, never an empty "None"
         lowerthird = None
         if fx_on and fx.get("lowerthird", False) and cand:
             ctx_parts = []
@@ -1087,8 +1093,8 @@ def build_segments(
             if ctx_parts:
                 lowerthird = "  ·  ".join(ctx_parts)
 
-        # P12 + P15: "store drap" = punch-utvalget (headshots + siste kill).
-        # Samme tider brukes til RGB-split i bildet og impact-SFX i miksen.
+        # "Big kills" = the punch selection (headshots + last kill). The same
+        # times are used for the chroma split in the image and impact SFX in the mix.
         impact_times = sorted(
             [p["t"] for p in hs_punches]
             + ([kill_fx["t"]] if kill_fx else [])
@@ -1104,7 +1110,7 @@ def build_segments(
             parts, decision, fx, beat_ctx, letterbox, kill_fx,
             freeze, hs_punches, [(s, e) for s, e, _ in micro],
             counter, lowerthird, impacts,
-            src_fps=probe_fps(clip_path),  # P20: høy-fps-kilde → ekte slow-mo
+            src_fps=probe_fps(clip_path),  # high-fps source → real slow-mo
         )
         out_path = segments_dir / f"{decision.order:02d}_{decision.clip_id}.mp4"
         run_ffmpeg(
@@ -1120,8 +1126,8 @@ def build_segments(
             f"step 6: segment {decision.order:02d} ({decision.clip_id})",
         )
         actual = probe_duration(out_path)
-        # Faktisk synk-feil: hvor langt kuttet lander fra beatet etter
-        # encoding (frame-granularitet ~17 ms ved 60 fps). Kravet er ±100 ms.
+        # Actual sync error: how far the cut lands from the beat after
+        # encoding (frame granularity ~17 ms at 60 fps). The target is ±100 ms.
         beat_offset_ms = (
             round((timeline_pos + actual - snapped) * 1000)
             if snapped is not None and trimmed_ms is not None
@@ -1136,15 +1142,15 @@ def build_segments(
                 "trimmed_to_hit_beat_ms": trimmed_ms,
                 "beat_offset_ms": beat_offset_ms,
                 "timeline_end_s": round(timeline_pos + actual, 3),
-                # P15: impact-SFX mikses på disse tidene (relative til
-                # segmentstart) i assembly
+                # impact SFX is mixed at these times (relative to the
+                # segment start) during assembly
                 "sfx_impact_times_s": [round(t, 3) for t in impact_times],
             }
         )
         timeline_pos += actual
         segment_files.append(out_path)
 
-        # P19: rewind + slow-mo-replay rett etter klimaks-segmentet
+        # rewind + slow-mo replay right after the climax segment
         if replay_pick and replay_pick[0] == decision.clip_id:
             replay_kill = replay_pick[1]
             alt_path = clips_dir / f"{decision.clip_id}_alt.mp4"
@@ -1164,7 +1170,7 @@ def build_segments(
                 actual, fx, replay_out, log_path,
                 f"step 6: replay ({decision.clip_id})",
             )
-            # impact-SFX når drapet lander i replayen (etter rewinden)
+            # impact SFX when the kill lands in the replay (after the rewind)
             kill_in_replay = REPLAY_REWIND_S + (
                 min(replay_kill.offset_s, REPLAY_PRE_S) / REPLAY_FACTOR
             )

@@ -1,13 +1,13 @@
-# Fragsmith — konfigurasjon
-# Kopier denne fila til config.toml og fyll inn dine egne verdier.
+# Fragsmith configuration
+# Copy this file to config.toml and fill in your own values.
 
 [players]
-# Dine Steam-kontoer (SteamID64). Pipelinen velger automatisk den som er i
-# demoen; er flere med, velges den med høyest samlet hype-score.
-# --player <steamid64> på kommandolinja overstyrer.
-# Finn din SteamID64 f.eks. på https://steamid.io
+# Your Steam accounts (SteamID64). The pipeline automatically picks the one
+# that's in the demo; if several are, the one with the highest total hype
+# score is picked. --player <steamid64> on the command line overrides it.
+# Find your SteamID64 at e.g. https://steamid.io
 known_players = [
-    "76561190000000000",  # erstatt med din SteamID64
+    "76561190000000000",  # replace with your SteamID64
 ]
 
 [music]
@@ -19,25 +19,25 @@ height = 1080
 framerate = 60
 
 [render]
-# SSH-transport: dev-PC-en sender jobber og henter klipp selv.
-# La ssh_host stå tom hvis du ikke bruker SSH.
-ssh_host = ""                 # f.eks. "bruker@192.168.1.50"
-ssh_key = ""                  # f.eks. 'C:\Users\<deg>\.ssh\fragsmith_render'
+# SSH transport: this PC sends jobs to the render PC and fetches the clips itself.
+# Leave ssh_host empty if you don't use SSH.
+ssh_host = ""                 # e.g. "user@192.168.1.50"
+ssh_key = ""                  # e.g. 'C:\Users\<you>\.ssh\fragsmith_render'
 remote_job_dir = "C:/fragsmith-jobs"
 
-# Alternativ: delt mappe (SMB) eller lokal kø. Tom + tom ssh_host = manuell USB.
+# Alternative: a shared folder (SMB) or a local queue. Empty + empty ssh_host = manual USB.
 job_dir = ""
 
-# P20: klipp med slow-mo (Director-segmenter, headshot-mikro eller replay)
-# rendres i denne frameraten → ekte smooth nedbremsing uten interpolasjon.
-# 120 dekker slow-mo ned til ~0.5×; 240 dekker 0.25× men dobler render-tid/
-# disk for de klippene. 0 = av (alt rendres i [video].framerate).
+# Clips with slow-mo (Director segments, headshot micro slow-mo or replay)
+# are rendered at this frame rate → truly smooth slowdown without interpolation.
+# 120 covers slow-mo down to ~0.5×; 240 covers 0.25× but doubles render time/
+# disk for those clips. 0 = off (everything renders at [video].framerate).
 highfps_framerate = 120
 
-# P2: trueView gir riktig POV-kropp/armer i HLAE. UVERIFISERT på vår
-# CS2-versjon — sjekk at crosshair/killfeed overlever på første render,
-# noter utfallet i learnings_runtime.md. X-ray settes automatisk per klipp
-# (ace/clutch/AWP) og har ikke eget flagg her.
+# trueView gives the correct POV body/arms in HLAE. UNVERIFIED on recent
+# CS2 versions: check that the crosshair/killfeed survive on the first render
+# and note the result in learnings_runtime.md. X-ray is set automatically per
+# clip (ace/clutch/AWP) and has no flag of its own here.
 true_view = true
 
 [director]
@@ -46,57 +46,57 @@ max_retries = 3
 
 [effects]
 enabled = true
-intensity = 1.2          # global styrke 0.0-2.0 (skalerer alt under)
-grade = true             # fargegradering: kontrast, metning, skarphet
-vignette = true          # mørkere hjørner
-beat_zoom = true         # puls-zoom som dunker på beatene
-beat_zoom_strength = 0.5 # 0.5 = diskré, 2.0 = aggressiv (1.4 kan føles "laggy")
-flash_transitions = true # hvit blits inn i klipp (der Director valgte "cut")
-wobble = false           # av: beat-synket risting kan føles urolig
-kill_zoom = true         # dyp zoom inn på crosshair på siste kill i hvert klipp
-kill_zoom_factor = 1.7   # hvor langt inn (1.7 = 70 %)
-kill_tilt = true         # dutch tilt på filmens klimaks-kill (kombineres med kill_zoom)
-kill_tilt_degrees = 22.0 # klampes automatisk så zoomen dekker svarte hjørner
-intro_hook = true        # "cold open": 3 mikro-glimt av toppdrap før intro-kortet
-slowmo_punch = true      # sakte push-in zoom under slow-mo-segmenter
-eased_ramps = true       # myke hastighetsoverganger inn/ut av slow-mo (P3)
-smooth_slowmo = true     # optical flow-interpolert slow-mo — jevnere, men tregere encode (P8)
-letterbox_on_slowmo = true  # 2.35:1-bånd som glir inn på slow-mo/clutch-klimaks (P6)
-lut = "assets/luts/fragsmith-teal-orange.cube"  # .cube-LUT, filmisk teal-orange (P5)
-                         # generert av tools/make_lut.py — kjør det på nytt for å justere.
-                         # Relativ sti ankres i prosjektmappa. Tom = av.
-grain = 0.15             # film grain 0.0-1.0, 0 = av (P5)
-freeze_on_finish = true  # freeze-frame på siste drap i ace/4k+ (P4)
-freeze_seconds = 0.45    # hvor lenge bildet fryses
-headshot_punch = true    # liten zoom-punch på headshots (P10) — siste kill dekkes av kill_zoom
-headshot_punch_strength = 1.0  # 1.0 ≈ 1.18× zoom (skaleres også av intensity, tak 1.22×)
-headshot_micro_slowmo = true   # kort 0.4×-øyeblikk rundt headshot-punchen (P10)
-kill_counter = true      # teller 1→2→3→4K/ACE synket på hvert drap, klipp med 3+ kills (P11)
-lowerthird = true        # diskret kontekstlinje nede til venstre: kart · runde · 1vX (P7)
-animated_overlays = true # overlay-tekst glir opp + fader i stedet for hard på/av (P9)
-impact_split = true      # 3 frames RGB-forskyvning på store drap — følger punch-utvalget (P12)
-instant_replay = true    # P17+P19: klimaks-drapet spoles tilbake og vises i slow-mo fra
-                         # offerets POV (krever ekstra render-sekvens — mer render-tid/disk)
+intensity = 1.2          # global strength 0.0-2.0 (scales everything below)
+grade = true             # color grading: contrast, saturation, sharpness
+vignette = true          # darker corners
+beat_zoom = true         # pulse zoom that thumps on the beats
+beat_zoom_strength = 0.5 # 0.5 = subtle, 2.0 = aggressive (1.4 can feel "laggy")
+flash_transitions = true # white flash into clips (where the Director chose "cut")
+wobble = false           # off: beat-synced shaking can feel restless
+kill_zoom = true         # deep zoom into the crosshair on the last kill of each clip
+kill_zoom_factor = 1.7   # how far in (1.7 = 70%)
+kill_tilt = true         # dutch tilt on the film's climax kill (combined with kill_zoom)
+kill_tilt_degrees = 22.0 # clamped automatically so the zoom covers the black corners
+intro_hook = true        # "cold open": 3 micro glimpses of top kills before the intro card
+slowmo_punch = true      # slow push-in zoom during slow-mo segments
+eased_ramps = true       # smooth speed transitions into/out of slow-mo
+smooth_slowmo = true     # optical flow interpolated slow-mo: smoother, but slower encode
+letterbox_on_slowmo = true  # 2.35:1 bar that slides in on slow-mo/clutch climaxes
+lut = "assets/luts/fragsmith-teal-orange.cube"  # .cube LUT, filmic teal-orange
+                         # generated by tools/make_lut.py; run it again to adjust.
+                         # A relative path is anchored in the project folder. Empty = off.
+grain = 0.15             # film grain 0.0-1.0, 0 = off
+freeze_on_finish = true  # freeze frame on the last kill of an ace/4k+
+freeze_seconds = 0.45    # how long the image is frozen
+headshot_punch = true    # small zoom punch on headshots; the last kill is covered by kill_zoom
+headshot_punch_strength = 1.0  # 1.0 ≈ 1.18× zoom (also scaled by intensity, capped at 1.22×)
+headshot_micro_slowmo = true   # short 0.4× moment around the headshot punch
+kill_counter = true      # counter 1→2→3→4K/ACE synced to each kill, clips with 3+ kills
+lowerthird = true        # subtle context line in the bottom left: map · round · 1vX
+animated_overlays = true # overlay text slides up + fades instead of a hard on/off
+impact_split = true      # 3 frames of color shift on big kills; follows the punch selection
+instant_replay = true    # the climax kill is rewound and shown in slow-mo from the
+                         # victim's POV (needs an extra render pass: more render time/disk)
 
 [editing]
 intro_seconds = 2.5
 outro_seconds = 2.5
-beat_tolerance_seconds = 0.75  # maks trimming for å treffe et beat
-drop_sync = true               # P21: legg klimaks-klippet på musikkens bass-drop
-                               # (intro-justering eller musikk-offset; spor uten
-                               # tydelig drop faller tilbake til klimaks-til-slutt)
-game_audio_volume = 0.25       # game-lyd under musikken (med sidechain_duck kan denne økes, f.eks. 0.5)
-sidechain_duck = true          # duck game-lyd dynamisk etter musikkens nivå (P16)
-sidechain_threshold = 0.05     # musikknivå der ducking slår inn
-sidechain_ratio = 8.0          # hvor hardt det dukkes (høyere = mer)
-sidechain_release_ms = 300     # hvor raskt game-lyden slipper opp igjen
-stats_outro = true             # outro med K/K-D/HS%/beste clutch i stedet for bare tekst (P13)
-sfx = true                     # whoosh inn mot klippbytter + impact på store drap (P15)
-sfx_volume = 0.35              # SFX-nivå i miksen (impact får ×1.3)
-sfx_dir = "assets/sfx"         # egne .wav-er her overstyrer; mangler de, syntetiseres de
+beat_tolerance_seconds = 0.75  # max trimming to hit a beat
+drop_sync = true               # place the climax clip on the music's bass drop
+                               # (intro adjustment or music offset; tracks without
+                               # a clear drop fall back to climax-at-the-end)
+game_audio_volume = 0.25       # game audio under the music (with sidechain_duck this can go higher, e.g. 0.5)
+sidechain_duck = true          # duck game audio dynamically by the music's level
+sidechain_threshold = 0.05     # music level where ducking kicks in
+sidechain_ratio = 8.0          # how hard it ducks (higher = more)
+sidechain_release_ms = 300     # how fast the game audio comes back up
+stats_outro = true             # outro with kills/K-D/HS%/best clutch instead of just text
+sfx = true                     # whoosh into clip changes + impact on big kills
+sfx_volume = 0.35              # SFX level in the mix (impact gets ×1.3)
+sfx_dir = "assets/sfx"         # your own .wav files here override; if missing, they're synthesized
 
 [clips]
-pre_kill_seconds = 5.0    # luft før første kill i et klipp
-post_kill_seconds = 3.0   # luft etter siste kill
-max_gap_seconds = 15.0    # kills nærmere enn dette klumpes i samme klipp
-max_candidates = 25       # hard grense inn til AI Director
+pre_kill_seconds = 5.0    # lead-in before the first kill in a clip
+post_kill_seconds = 3.0   # tail after the last kill
+max_gap_seconds = 15.0    # kills closer than this are grouped into the same clip
+max_candidates = 25       # hard limit going into the AI Director

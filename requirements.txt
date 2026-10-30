@@ -1,10 +1,10 @@
-# Fase a (parse + scoring)
+# Parse + scoring
 demoparser2>=2.13
 pydantic>=2.0
 
-# Fase b (AI Director)
+# AI Director
 anthropic>=0.116
-# Fase d (beats)
+# Beat analysis
 librosa>=0.11
 
-# ffmpeg: systeminstallasjon (verifisert 8.1.1 på dev-PC), ikke pip
+# ffmpeg: system install (verified with 8.1.1), not pip

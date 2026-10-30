@@ -1,10 +1,10 @@
-"""Steg 2: Regelbasert hype-scoring → kandidatklipp (Highlight-modeller).
+"""Step 2: rule-based hype scoring → candidate clips (Highlight models).
 
-Ingen LLM her — rene regler. Clutch-deteksjon bygges selv fra death-events +
-roster per runde (demoparser2 har ingen ferdige clutch-flagg).
+No LLM here, just rules. Clutch detection is built from death events +
+the roster per round (demoparser2 has no ready-made clutch flags).
 
-Justeringer av reglene skjer på bakgrunn av learnings_runtime.md
-("Hype-scoring"-seksjonen), ikke ad hoc.
+Rule changes are based on learnings_runtime.md (the "Hype scoring"
+section), not ad hoc.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def build_candidates(
     cfg: dict,
     player_override: str | None = None,
 ) -> tuple[list[Highlight], list[str], str]:
-    """Returnerer (kandidater, flagg, valgt POV-steamid)."""
+    """Returns (candidates, flags, chosen POV steamid)."""
     flags: list[str] = []
     clips_cfg = cfg.get("clips", {})
     known = [str(p) for p in cfg.get("players", {}).get("known_players", [])]
@@ -28,7 +28,7 @@ def build_candidates(
     kills = [k for k in events["kills"] if k["attacker_steamid"]]
     present = {k["attacker_steamid"] for k in kills}
 
-    # --- Velg POV-spiller ------------------------------------------------
+    # --- Pick the POV player ---------------------------------------------
     if player_override:
         pov_candidates = [player_override]
         if player_override not in present:
@@ -47,7 +47,7 @@ def build_candidates(
 
     clutches = detect_won_clutches(events)
 
-    # Score alle POV-kandidater, velg spilleren med høyest totalscore
+    # Score all POV candidates, pick the player with the highest total score
     best_pov = ""
     best_total = -1.0
     best_clips: list[Highlight] = []
@@ -65,7 +65,7 @@ def build_candidates(
             f"Others: {', '.join(others)}"
         )
 
-    # --- Cap: behold ALLTID 3k+ og vunnede clutcher ----------------------
+    # --- Cap: ALWAYS keep 3k+ and won clutches ---------------------------
     max_candidates = int(clips_cfg.get("max_candidates", 25))
     must_keep = [c for c in best_clips if c.kill_count >= 3 or c.kind == "clutch"]
     rest = sorted(
@@ -115,7 +115,7 @@ def _clips_for_player(
         key=lambda k: k["tick"],
     )
 
-    # Klump kills: samme runde + tick-gap < max_gap → samme klipp
+    # Group kills: same round + tick gap < max_gap → same clip
     clusters: list[list[dict]] = []
     for k in my_kills:
         if (
@@ -132,8 +132,8 @@ def _clips_for_player(
     clips: list[Highlight] = []
     for cluster in clusters:
         round_no = cluster[0]["round"]
-        # Clutch/duell gjelder kun klipp som slutter ETTER at 1vX-situasjonen
-        # oppsto — tidligere kills i samme runde er vanlige kills.
+        # Clutch/duel only applies to clips that end AFTER the 1vX situation
+        # arose; earlier kills in the same round are ordinary kills.
         clutch_vs = None
         entry = clutches.get((round_no, pov))
         if entry and cluster[-1]["tick"] >= entry[1]:
@@ -145,7 +145,7 @@ def _clips_for_player(
         start = int(cluster[0]["tick"] - pre * tickrate)
         end = int(cluster[-1]["tick"] + post * tickrate)
         rnd = rounds_by_no.get(round_no)
-        if rnd:  # ikke vis forrige runde / etter runden
+        if rnd:  # don't show the previous round / after the round
             start = max(start, rnd["freeze_end_tick"])
             end = min(end, rnd["end_tick"] + int(2 * tickrate))
         start = max(start, 0)
@@ -157,9 +157,9 @@ def _clips_for_player(
         h.player_name = cluster[0]["attacker_name"]
         h.round = round_no
         h.duration_seconds = round((end - start) / tickrate, 1)
-        # P1: per-kill-tidsstempler (offset i KILDE-tid fra klippstart).
-        # Clamp defensivt til [0, duration] — start/end kan være klampet
-        # til rundegrensene over.
+        # Per-kill timestamps (offset in SOURCE time from the clip start).
+        # Clamp defensively to [0, duration], since start/end may have been
+        # clamped to the round boundaries above.
         h.kills = [
             KillMark(
                 tick=k["tick"],
@@ -189,7 +189,7 @@ def _score_cluster(
         weapons[0] in SPECIAL_SINGLE_WEAPONS
         or (weapons[0] in AWP_WEAPONS and cluster[0]["headshot"])
     )
-    # Enkeltkills er kun med hvis clutch eller noe spesielt (kniv/AWP-hs)
+    # Single kills are only included if clutch or something special (knife/AWP hs)
     if n == 1 and not clutch_vs and not special_single:
         return None
 
@@ -198,7 +198,7 @@ def _score_cluster(
     if clutch_vs and clutch_vs >= 2:
         score += 2.0 + 0.5 * (clutch_vs - 2)  # 1v2=+2.0, 1v3=+2.5, ...
     elif clutch_vs == 1:
-        score += 0.5  # vunnet 1v1-duell — litt drama, ikke clutch
+        score += 0.5  # won 1v1 duel: a bit of drama, not a clutch
 
     score += 1.5 * sum(1 for w in weapons if w in SPECIAL_SINGLE_WEAPONS)
     score += min(1.5, 0.5 * sum(1 for w in weapons if w in AWP_WEAPONS))
@@ -207,7 +207,7 @@ def _score_cluster(
     if n >= 3 and headshots / n >= 0.75:
         score += 0.5
     if n >= 3 and (cluster[-1]["tick"] - cluster[0]["tick"]) <= 5 * tickrate:
-        score += 0.5  # rask multikill
+        score += 0.5  # fast multikill
 
     if n >= 5:
         kind = "ace"
@@ -219,7 +219,7 @@ def _score_cluster(
         kind = "highlight_single" if n == 1 else "multikill"
 
     return Highlight(
-        clip_id="",  # settes av kaller
+        clip_id="",  # set by the caller
         start_tick=0,
         end_tick=0,
         player_steamid="",
@@ -228,19 +228,19 @@ def _score_cluster(
         hype_score=round(min(score, 10.0), 2),
         weapons=sorted(set(weapons)),
         headshots=headshots,
-        clutch_vs=clutch_vs if clutch_vs else None,  # 1 = vunnet 1v1-duell
+        clutch_vs=clutch_vs if clutch_vs else None,  # 1 = won 1v1 duel
     )
 
 
 def detect_won_clutches(events: dict) -> dict[tuple[int, str], tuple[int, int]]:
-    """Finn vunnede clutcher: {(runde, steamid): (X, fra_tick)} for 1vX (X >= 1).
+    """Find won clutches: {(round, steamid): (X, from_tick)} for 1vX (X >= 1).
 
-    Simulerer hvem som lever gjennom hver runde via roster-snapshot +
-    death-events. Clutch = spillerens lag er nede i 1 mot >= 2 levende
-    motstandere, OG spillerens lag vinner runden. X=1 er en vunnet
-    1v1-DUELL — ikke clutch-kind, men Director skal slow-moe avslutningen.
-    fra_tick er øyeblikket situasjonen oppsto: kills FØR det er ikke en del
-    av clutchen/duellen (runde med to klipp skal ikke dobbelt-stemples).
+    Simulates who is alive through each round using the roster snapshot +
+    death events. Clutch = the player's team is down to 1 against >= 2 living
+    opponents, AND the player's team wins the round. X=1 is a won 1v1 DUEL:
+    not the clutch kind, but the Director should slow-mo the finish.
+    from_tick is the moment the situation arose: kills BEFORE that are not
+    part of the clutch/duel (a round with two clips shouldn't be tagged twice).
     """
     result: dict[tuple[int, str], tuple[int, int]] = {}
     kills_by_round: dict[int, list[dict]] = {}
@@ -253,7 +253,7 @@ def detect_won_clutches(events: dict) -> dict[tuple[int, str], tuple[int, int]]:
         deaths = sorted(kills_by_round.get(rnd["round"], []), key=lambda k: k["tick"])
 
         if not roster:
-            # Fallback: bygg roster fra team-feltene i rundens kills
+            # Fallback: build the roster from the team fields in the round's kills
             for k in deaths:
                 if k["victim_steamid"] and k["victim_team"] in ("T", "CT"):
                     roster.setdefault(k["victim_steamid"], k["victim_team"])
@@ -279,8 +279,8 @@ def detect_won_clutches(events: dict) -> dict[tuple[int, str], tuple[int, int]]:
                     if len(last) == 1 and len(opp) >= 1 and last_team == winner:
                         clutcher, clutch_vs = last[0], len(opp)
                         clutch_tick = k["tick"]
-        # Laget vant runden (sjekket over) — clutcheren kan ha dødd og
-        # likevel "vunnet" (bombe eksploderer), så vi krever ikke overlevelse.
+        # The team won the round (checked above). The clutcher may have died
+        # and still "won" (bomb explodes), so we don't require survival.
         if clutcher:
             result[(rnd["round"], clutcher)] = (clutch_vs, clutch_tick)
     return result

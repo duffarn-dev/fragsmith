@@ -1,10 +1,10 @@
-"""Steg 1: Parse CS2 .dem → events-struktur (kills, runder, spillere).
+"""Step 1: parse a CS2 .dem → events dict (kills, rounds, players).
 
-Bruker demoparser2 (LaihoE). Output er en ren dict som serialiseres til
-runs/<id>/00-events.json. Kolonnenavn i demoparser2 kan variere litt mellom
-demo-kilder (Valve MM vs FACEIT) — derfor slås kolonner opp med fallbacks og
-feilmeldinger lister faktiske kolonner, så avvik kan legges i
-learnings_runtime.md.
+Uses demoparser2 (LaihoE). The output is a plain dict serialized to
+runs/<id>/00-events.json. Column names in demoparser2 can differ a bit
+between demo sources (Valve MM vs FACEIT), so columns are looked up with
+fallbacks and error messages list the actual columns, so deviations can be
+noted in learnings_runtime.md.
 """
 from __future__ import annotations
 
@@ -14,15 +14,15 @@ from pathlib import Path
 from demoparser2 import DemoParser
 
 TEAM_NAMES = {2: "T", 3: "CT"}
-DEFAULT_TICKRATE = 64  # CS2 er 64 tick (subtick endrer ikke demo-tickrate)
+DEFAULT_TICKRATE = 64  # CS2 is 64 tick (subtick doesn't change the demo tickrate)
 
 
 class DemoParseError(RuntimeError):
-    """Demoen kunne ikke parses / manglet forventede events."""
+    """The demo couldn't be parsed or was missing expected events."""
 
 
 def _col(df, *candidates: str) -> str:
-    """Finn første kolonnenavn som finnes i dataframen."""
+    """Find the first column name that exists in the dataframe."""
     for name in candidates:
         if name in df.columns:
             return name
@@ -34,7 +34,7 @@ def _col(df, *candidates: str) -> str:
 
 
 def _steamid(value) -> str:
-    """Normaliser steamid (kan komme som int/float/str, eller NaN for world)."""
+    """Normalize a steamid (can be int/float/str, or NaN for world)."""
     if value is None:
         return ""
     if isinstance(value, float) and math.isnan(value):
@@ -62,7 +62,7 @@ def parse_demo(dem_path: str | Path) -> dict:
     header = {}
     try:
         header = parser.parse_header()
-    except Exception as exc:  # header er kjekt, men ikke kritisk
+    except Exception as exc:  # the header is nice to have, not critical
         header = {"_header_error": str(exc)}
 
     # --- Kills ---------------------------------------------------------
@@ -119,17 +119,18 @@ def parse_demo(dem_path: str | Path) -> dict:
             }
         )
 
-    # --- Runder --------------------------------------------------------
+    # --- Rounds --------------------------------------------------------
     rounds = _parse_rounds(parser)
 
-    # Fallback: runde-nummer fra rundegrenser hvis total_rounds_played manglet
+    # Fallback: round number from round boundaries if total_rounds_played was missing
     if rounds and any(k["round"] == 0 for k in kills):
         for k in kills:
             if k["round"] == 0:
                 k["round"] = _round_for_tick(k["tick"], rounds)
 
-    # Siste runde kan mangle round_end (surrender/disconnect) — syntetiser
-    # en runde uten vinner så klipp der fortsatt klampes og telles.
+    # The last round can be missing round_end (surrender/disconnect).
+    # Synthesize a round without a winner so clips there are still clamped
+    # and counted.
     max_kill_round = max((k["round"] for k in kills), default=0)
     while rounds and max_kill_round > rounds[-1]["round"]:
         prev = rounds[-1]
@@ -143,15 +144,15 @@ def parse_demo(dem_path: str | Path) -> dict:
                 "start_tick": prev["end_tick"],
                 "freeze_end_tick": prev["end_tick"],
                 "end_tick": last_tick + 10 * DEFAULT_TICKRATE,
-                "winner": "",  # ukjent — clutch-deteksjon hopper over runden
+                "winner": "",  # unknown, clutch detection skips the round
                 "roster": {},
             }
         )
 
-    # --- Roster per runde (for clutch-deteksjon i steg 2) ---------------
+    # --- Roster per round (for clutch detection in step 2) --------------
     _attach_rosters(parser, rounds)
 
-    # --- Spillere --------------------------------------------------------
+    # --- Players ---------------------------------------------------------
     players = _parse_players(parser, kills)
 
     return {
@@ -208,7 +209,7 @@ def _parse_rounds(parser: DemoParser) -> list[dict]:
                 "freeze_end_tick": freeze_end,
                 "end_tick": end_tick,
                 "winner": _winner_name(row.get("winner")),
-                "roster": {},  # fylles av _attach_rosters
+                "roster": {},  # filled in by _attach_rosters
             }
         )
         prev_end = end_tick
@@ -233,14 +234,14 @@ def _round_for_tick(tick: int, rounds: list[dict]) -> int:
 
 
 def _attach_rosters(parser: DemoParser, rounds: list[dict]) -> None:
-    """Snapshot av hvem som er på T/CT rett etter freeze-slutt i hver runde."""
+    """Snapshot of who is on T/CT right after freeze time ends in each round."""
     if not rounds:
         return
     snapshot_ticks = [r["freeze_end_tick"] + 8 for r in rounds]
     try:
         df = parser.parse_ticks(["team_num"], ticks=snapshot_ticks)
     except Exception:
-        return  # steg 2 faller tilbake til team-info fra kills
+        return  # step 2 falls back to team info from kills
     tick_c = _col(df, "tick")
     sid_c = _col(df, "steamid")
     for r, snap_tick in zip(rounds, snapshot_ticks):
@@ -266,7 +267,7 @@ def _parse_players(parser: DemoParser, kills: list[dict]) -> list[dict]:
                 players[sid] = str(row.get(name_c) or "")
     except Exception:
         pass
-    # suppler fra kills (dekker også hvis parse_player_info feilet)
+    # fill in from kills (also covers parse_player_info failing)
     for k in kills:
         for sid, name in (
             (k["attacker_steamid"], k["attacker_name"]),

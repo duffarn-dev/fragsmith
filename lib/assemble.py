@@ -1,6 +1,6 @@
-"""Steg 7: Assembly — intro/outro-kort, sammensying, musikkmiks, eksport.
+"""Step 7: assembly. Intro/outro cards, stitching, music mix, export.
 
-Game-lyd duckes under musikken; musikken fades ut mot slutten.
+Game audio is ducked under the music; the music fades out toward the end.
 Output: runs/<id>/final.mp4 + report.md.
 """
 from __future__ import annotations
@@ -46,22 +46,23 @@ def _text_card(
 
 
 def _ensure_sfx(sfx_dir: Path, log_path: Path) -> dict[str, Path]:
-    """P15: SFX-filene syntetiseres med ffmpeg hvis de mangler — rettighets-
-    frie by construction, ingen binærfiler i repoet. Legg egne .wav-er i
-    sfx_dir for å overstyre (de genereres kun når fila ikke finnes)."""
+    """The SFX files are synthesized with ffmpeg if they're missing, so
+    they're royalty-free by construction. Put your own .wav files in
+    sfx_dir to override them (they're only generated when the file is
+    missing)."""
     sfx_dir.mkdir(parents=True, exist_ok=True)
     whoosh = sfx_dir / "whoosh.wav"
     impact = sfx_dir / "impact.wav"
     if not whoosh.exists():
-        # pink-noise-riser (0.6 s) som stiger inn mot kuttet
+        # pink-noise riser (0.6 s) that builds into the cut
         run_ffmpeg(
             [
                 "-f", "lavfi", "-i", "anoisesrc=d=0.6:c=pink:r=48000:a=0.7",
                 "-af",
                 "highpass=f=300,lowpass=f=5000,"
                 "afade=t=in:d=0.45:curve=exp,afade=t=out:st=0.45:d=0.15,"
-                # båndpassfiltrene spiser mye energi — løft, med limiter som
-                # tak så peak aldri klipper (jf. impact-skurringen)
+                # the band-pass filters eat a lot of energy: boost it, with a
+                # limiter as ceiling so the peak never clips (see impact below)
                 "volume=3.0,alimiter=limit=0.95",
                 "-ac", "2", str(whoosh),
             ],
@@ -69,16 +70,17 @@ def _ensure_sfx(sfx_dir: Path, log_path: Path) -> dict[str, Path]:
             "step 7: synthesizing whoosh.wav",
         )
     if not impact.exists():
-        # 52 Hz-dunk med dempet klikk-transient. NB: summen av gain-ene må
-        # holde peak < 1.0 — volume-boost ETTER amix klippet 16-bit-waven
-        # til firkantbølge (høyfrekvent skurr på hvert drap, 2026-07-05).
+        # 52 Hz thump with a soft click transient. Note: the sum of the gains
+        # must keep the peak < 1.0. A volume boost AFTER amix clipped the
+        # 16-bit wav into a square wave (high-pitched crackle on every kill,
+        # 2026-07-05).
         run_ffmpeg(
             [
                 "-f", "lavfi", "-i", "sine=f=52:d=0.5:r=48000",
                 "-f", "lavfi", "-i", "anoisesrc=d=0.03:c=white:r=48000:a=0.4",
                 "-filter_complex",
-                # sine-kilden er lavmælt (~-18 dB) — løft bassen kraftig,
-                # klikket forsiktig, og la limiteren garantere peak < 1.0
+                # the sine source is quiet (~-18 dB): boost the bass hard,
+                # the click gently, and let the limiter guarantee peak < 1.0
                 "[0:a]afade=t=out:st=0.02:d=0.46,volume=6.0[bass];"
                 "[1:a]lowpass=f=2500,volume=0.6[click];"
                 "[bass][click]amix=inputs=2:duration=first:normalize=0,"
@@ -94,9 +96,9 @@ def _ensure_sfx(sfx_dir: Path, log_path: Path) -> dict[str, Path]:
 def player_stats(
     events: dict | None, pov_steamid: str, candidates_by_id: dict | None = None
 ) -> dict | None:
-    """P13: aggreger POV-stats fra events. Returnerer None hvis grunnlaget
-    mangler (→ fall tilbake til vanlig tekstkort). HS% utelates ved < 5 kills
-    (meningsløse prosenter, jf. spec-en)."""
+    """Aggregate POV stats from events. Returns None if the data is missing
+    (→ fall back to a plain text card). HS% is left out below 5 kills
+    (the percentage would be meaningless)."""
     if not events or not pov_steamid:
         return None
     all_kills = events.get("kills", [])
@@ -131,7 +133,7 @@ def _stats_card(
     out_path: Path,
     log_path: Path,
 ) -> None:
-    """P13: outro med stats i stedet for bare tekst. Samme fade som _text_card."""
+    """Outro with stats instead of just text. Same fade as _text_card."""
     line1 = " — ".join(x for x in (player_name, stats["map"]) if x)
     line2 = f"{stats['kills']} kills  ·  K/D {stats['kd']:.2f}"
     if stats["hs_pct"] is not None:
@@ -176,14 +178,15 @@ def build_intro_hook(
     cfg: dict,
     log_path: Path,
 ) -> list[Path]:
-    """P14/"cold open": inntil 3 mikro-glimt (0.25 s) av toppdrapene, klippet
-    rett fra råklippene rundt KillMark-offsets, foran intro-kortet.
-    Rekkefølge: stigende hype — beste glimt sist, rett før tittelen.
+    """Cold open: up to 3 micro glimpses (0.25 s) of the top kills, cut
+    straight from the raw clips around the KillMark offsets, placed before
+    the intro card. Order: rising hype, best glimpse last, right before
+    the title.
 
-    Kalles av main.py FØR build_segments: glimtene ligger foran introen på
-    tidslinja, så beat-synken i steg 6 må vite samlet glimt-lengde (uten
-    det var all beat-sync ~0.75 s off når intro_hook var på — bug funnet
-    under P21-arbeidet 2026-07-07)."""
+    Called by main.py BEFORE build_segments: the glimpses sit before the
+    intro on the timeline, so the beat sync in step 6 needs to know their
+    total length (without it, all beat sync was ~0.75 s off when intro_hook
+    was on; bug found 2026-07-07)."""
     fx = cfg.get("effects", {})
     if not (fx.get("enabled", True) and fx.get("intro_hook", False)):
         return []
@@ -202,7 +205,7 @@ def build_intro_hook(
         picks.append((score, clip, k.offset_s))
     picks = sorted(sorted(picks, key=lambda p: -p[0])[:3], key=lambda p: p[0])
 
-    glimt: list[Path] = []
+    glimpses: list[Path] = []
     for i, (_, clip, offset) in enumerate(picks):
         out = work / f"00_hook_{i}.mp4"
         run_ffmpeg(
@@ -222,8 +225,8 @@ def build_intro_hook(
             log_path,
             f"step 7: cold open glimpse {i + 1}",
         )
-        glimt.append(out)
-    return glimt
+        glimpses.append(out)
+    return glimpses
 
 
 def assemble(
@@ -241,10 +244,10 @@ def assemble(
     intro_seconds: float | None = None,
     music_offset: float = 0.0,
 ) -> Path:
-    """hook_files: ferdigbygde cold open-glimt (fra build_intro_hook) —
-    None = bygg dem her (bakoverkompatibelt). intro_seconds overstyrer
-    config (P21: intro-justering). music_offset (P21): start musikken så
-    mange sekunder UT i sporet, med kort fade-inn."""
+    """hook_files: prebuilt cold open glimpses (from build_intro_hook);
+    None = build them here (backward compatible). intro_seconds overrides
+    the config (intro adjustment for drop sync). music_offset: start the
+    music this many seconds INTO the track, with a short fade-in."""
     editing = cfg.get("editing", {})
     intro_s = (
         float(editing.get("intro_seconds", 2.5))
@@ -259,8 +262,8 @@ def assemble(
     outro = work / "99_outro.mp4"
     _text_card(plan.intro_text, intro_s, intro, log_path, "intro card")
 
-    # P13: stats-outro når [editing].stats_outro og grunnlaget finnes —
-    # ellers vanlig tekstkort (aldri halvtomt stats-kort)
+    # Stats outro when [editing].stats_outro is on and the data exists,
+    # otherwise a plain text card (never a half-empty stats card)
     stats = None
     pov_name = ""
     if editing.get("stats_outro", False) and candidates_by_id:
@@ -271,7 +274,7 @@ def assemble(
                 events, getattr(any_cand, "player_steamid", ""), candidates_by_id
             )
     if stats:
-        # litt lenger kort — tre-fire linjer trenger lesetid
+        # a slightly longer card: three or four lines need reading time
         _stats_card(plan.outro_text, pov_name, stats,
                     max(outro_s, 3.5), outro, log_path)
     else:
@@ -300,15 +303,15 @@ def assemble(
     fade_start = max(0.0, total - 3.0)
     final = run_dir / "final.mp4"
 
-    # P15: SFX-lag — whoosh inn mot hvert klippbytte, impact på store drap
-    # (samme tider som P12-splitten, fra cut_log). Under musikken i nivå.
+    # SFX layer: whoosh into every clip change, impact on big kills (same
+    # times as the impact split, from cut_log). Mixed below the music.
     sfx_inputs: list[str] = []
     sfx_chains: list[str] = []
     sfx_labels: list[str] = []
     if editing.get("sfx", False):
         sfx_dir = Path(editing.get("sfx_dir", "assets/sfx"))
         if not sfx_dir.is_absolute():
-            # relativ sti ankres i prosjektmappa, ikke i CWD
+            # a relative path is anchored in the project folder, not the CWD
             sfx_dir = Path(__file__).resolve().parent.parent / sfx_dir
         sfx = _ensure_sfx(sfx_dir, log_path)
         vol = float(editing.get("sfx_volume", 0.35))
@@ -345,8 +348,8 @@ def assemble(
 
     n_mix = 2 + len(sfx_labels)
     sfx_in = "".join(sfx_labels)
-    # P21: music_offset > 0 → sporet starter midt i (droppet skal treffe
-    # klimaks); kort fade-inn så innhoppet ikke smeller
+    # music_offset > 0 → the track starts partway in (so the drop hits the
+    # climax); short fade-in so the jump-in doesn't pop
     off = max(0.0, float(music_offset))
     music_chain = (
         f"[1:a]atrim={off:.3f}:{off + total:.3f},asetpts=PTS-STARTPTS,"
@@ -354,9 +357,9 @@ def assemble(
         + f"afade=t=out:st={fade_start:.3f}:d=3"
     )
     if editing.get("sidechain_duck", False):
-        # P16: game-lyd dukkes dynamisk av musikkens faktiske nivå
-        # (sidechaincompress) i stedet for fast volum — når musikken fader
-        # ut mot slutten, slipper game-lyden opp igjen av seg selv.
+        # Game audio is ducked dynamically by the music's actual level
+        # (sidechaincompress) instead of a fixed volume. When the music fades
+        # out at the end, the game audio comes back up on its own.
         thr = float(editing.get("sidechain_threshold", 0.05))
         ratio = float(editing.get("sidechain_ratio", 8.0))
         release = float(editing.get("sidechain_release_ms", 300))
@@ -366,14 +369,14 @@ def assemble(
             f"[game][m2]sidechaincompress=threshold={thr}:ratio={ratio}"
             f":attack=20:release={release}[gduck];"
             f"[gduck][m1]{sfx_in}amix=inputs={n_mix}"
-            f":duration=first:normalize=0[amiks]"
+            f":duration=first:normalize=0[amix]"
         )
     else:
         mix = (
             f"[0:a]volume={game_vol}[game];"
-            f"{music_chain}[musikk];"
-            f"[game][musikk]{sfx_in}amix=inputs={n_mix}"
-            f":duration=first:normalize=0[amiks]"
+            f"{music_chain}[music];"
+            f"[game][music]{sfx_in}amix=inputs={n_mix}"
+            f":duration=first:normalize=0[amix]"
         )
     if sfx_chains:
         mix = ";".join(sfx_chains) + ";" + mix
@@ -383,7 +386,7 @@ def assemble(
             "-i", str(music_path),
             *[a for p in sfx_inputs for a in ("-i", p)],
             "-filter_complex", mix,
-            "-map", "0:v", "-map", "[amiks]",
+            "-map", "0:v", "-map", "[amix]",
             "-c:v", "copy", "-c:a", "aac", "-b:a", "256k",
             str(final),
         ],
@@ -411,7 +414,7 @@ def write_report(
         f"**Film:** {final_path.name} ({final_duration:.1f} s)",
         f"**Music:** {plan.music_track} ({beats.get('bpm', '?')} BPM)",
     ]
-    # P21: drop-sync-avgjørelsen (lagt i beats-dicten av cmd_finish)
+    # the drop sync decision (put in the beats dict by cmd_finish)
     ds = beats.get("drop_sync")
     if ds:
         method = (
@@ -425,7 +428,7 @@ def write_report(
             f"the drop at {ds['drop_track_s']:.1f} s into the track via {method} — "
             f"offset {err:+d} ms"
         )
-    # P13: samme tall som stats-outroen viser, så de kan kontrolleres her
+    # the same numbers the stats outro shows, so they can be checked here
     any_cand = next(iter(candidates_by_id.values()), None)
     stats = player_stats(
         events, getattr(any_cand, "player_steamid", ""), candidates_by_id
@@ -461,7 +464,7 @@ def write_report(
         )
     lines += ["", "## Director's reasoning", ""]
     for d in sorted(plan.decisions, key=lambda d: d.order):
-        # P18: vis effektvalgene Director gjorde utover standardreglene
+        # show the effect choices the Director made beyond the default rules
         choices = []
         if d.is_climax:
             choices.append("climax")

@@ -1,4 +1,4 @@
-"""Delte Pydantic-modeller for kritiske beslutninger (plan seksjon 7)."""
+"""Shared Pydantic models for the pipeline's critical decisions."""
 from __future__ import annotations
 
 from typing import Literal, Optional
@@ -7,20 +7,21 @@ from pydantic import BaseModel
 
 
 class KillMark(BaseModel):
-    """Ett drap inne i et klipp (P1). offset_s er sekunder fra klippets
-    start_tick — i KILDE-tid; effekter må mappe via source_to_output_time
-    i edit_engine når slow-mo/ramper har strukket tidslinja."""
+    """A single kill inside a clip. offset_s is seconds from the clip's
+    start_tick, in SOURCE time; effects must map it through
+    source_to_output_time in edit_engine once slow-mo/ramps have stretched
+    the timeline."""
 
     tick: int
     offset_s: float
     weapon: str
     headshot: bool
     victim_name: str
-    victim_steamid: str = ""  # P17: trengs for offer-POV-render (schema 1.2)
+    victim_steamid: str = ""  # needed for the victim-POV render (schema 1.2)
 
 
 class Highlight(BaseModel):
-    """Ett kandidatklipp fra hype-scoringen (steg 2)."""
+    """A candidate clip from hype scoring (step 2)."""
 
     clip_id: str
     start_tick: int
@@ -29,59 +30,59 @@ class Highlight(BaseModel):
     kill_count: int
     kind: Literal["multikill", "clutch", "ace", "highlight_single", "flick"]
     hype_score: float  # 0-10
-    schema_version: str = "1.2"  # 1.1: + kills (P1) · 1.2: + victim_steamid (P17)
+    schema_version: str = "1.2"  # 1.1: + kills · 1.2: + victim_steamid
 
-    # Kontekst til AI Director (utover planens minimumsfelter)
+    # Context for the AI Director
     round: int = 0
     player_name: str = ""
     weapons: list[str] = []
     headshots: int = 0
-    clutch_vs: Optional[int] = None  # 1vX — vunnet clutch (>=2) eller 1v1-duell (1)
+    clutch_vs: Optional[int] = None  # 1vX: won clutch (>=2) or 1v1 duel (1)
     duration_seconds: float = 0.0
-    kills: list[KillMark] = []  # P1: per-kill-tidsstempler, i klipp-rekkefølge
+    kills: list[KillMark] = []  # per-kill timestamps, in clip order
 
 
 class SlowmoSegment(BaseModel):
-    """Ett slow-motion-segment, relativt til klippets start.
+    """A slow-motion segment, relative to the clip's start.
 
-    Planen spesifiserte tuple[float, float, float]; navngitte felt valgt fordi
-    structured outputs-skjemaet ikke støtter tuple-constraints godt.
+    Named fields instead of tuple[float, float, float] because the
+    structured outputs schema doesn't handle tuple constraints well.
     """
 
     start_s: float
     end_s: float
-    factor: float  # avspillingshastighet: 0.25 = kraftig slow-mo, 1.0 = normal
+    factor: float  # playback speed: 0.25 = heavy slow-mo, 1.0 = normal
 
 
-# P18: effekter Director kan velge/overstyre per klipp. Kun VALG — aldri
-# tallparametre (de styres av config, jf. plan.md: LLM kun i steg 3).
+# Effects the Director can pick/override per clip. CHOICES only, never
+# numeric parameters (those come from config; the LLM is only used in step 3).
 EffectName = Literal[
     "letterbox", "freeze", "kill_zoom",
     "headshot_punch", "impact_split", "kill_counter",
-    "replay",  # P19: instant replay av siste drap fra offer-POV (maks ett klipp)
+    "replay",  # instant replay of the last kill from the victim's POV (max one clip)
 ]
 
 
 class EditDecision(BaseModel):
-    """Directors beslutning for ett klipp."""
+    """The Director's decision for one clip."""
 
     clip_id: str
     order: int
     slowmo_segments: list[SlowmoSegment]
-    overlay_text: Optional[str]  # f.eks. "1v4 CLUTCH"
+    overlay_text: Optional[str]  # e.g. "1v4 CLUTCH"
     transition_in: Literal["cut", "fade", "speed_ramp"]
-    reasoning: str  # Director må begrunne valget
+    reasoning: str  # the Director must justify its choice
 
-    # P18: alle default av/tomme → deterministisk oppførsel uendret når
-    # Director utelater dem. Config-flagg er fortsatt master-bryter:
-    # effects_on kan ikke slå på noe brukeren har skrudd av globalt.
-    is_climax: bool = False  # filmens høydepunkt (dutch tilt m.m.); maks ett
-    effects_on: list[EffectName] = []   # tving PÅ utover standardreglene
-    effects_off: list[EffectName] = []  # skru AV for dette klippet
+    # All default to off/empty, so behavior is deterministic and unchanged
+    # when the Director leaves them out. Config flags are still the master
+    # switch: effects_on can't enable anything the user turned off globally.
+    is_climax: bool = False  # the film's high point (dutch tilt etc.); max one
+    effects_on: list[EffectName] = []   # force ON beyond the default rules
+    effects_off: list[EffectName] = []  # turn OFF for this clip
 
 
 class EditPlan(BaseModel):
-    """Hele redigeringsplanen fra AI Director."""
+    """The full edit plan from the AI Director."""
 
     demo_path: str
     music_track: str
@@ -89,4 +90,4 @@ class EditPlan(BaseModel):
     outro_text: str
     decisions: list[EditDecision]
     dropped_clip_ids: list[str]
-    schema_version: str = "1.1"  # 1.1: + is_climax/effects_on/effects_off (P18)
+    schema_version: str = "1.1"  # 1.1: + is_climax/effects_on/effects_off

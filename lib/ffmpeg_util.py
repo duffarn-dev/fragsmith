@@ -1,8 +1,8 @@
-"""Felles ffmpeg-kjøring med full logging (kommando + exit code + stderr).
+"""Shared ffmpeg runner with full logging (command + exit code + stderr).
 
-Alt ffmpeg-arbeid går via run_ffmpeg() så observability-kravet holdes:
-hver kommando logges ordrett til runs/<id>/ffmpeg.log, og feil stopper
-kjøringen med full stderr (aldri stille svelging).
+All ffmpeg work goes through run_ffmpeg() so every command is logged
+verbatim to runs/<id>/ffmpeg.log, and failures stop the run with the
+full stderr (never silently swallowed).
 """
 from __future__ import annotations
 
@@ -55,8 +55,8 @@ def probe_duration(path: Path) -> float:
 
 
 def probe_fps(path: Path) -> float:
-    """Kildens framerate (P20: >60 betyr høy-fps-rendret klipp — slow-mo
-    kan da bremses med ekte frames i stedet for minterpolate)."""
+    """Source frame rate. Above 60 means a high-fps rendered clip, so slow-mo
+    can use real frames instead of minterpolate."""
     proc = subprocess.run(
         [
             "ffprobe", "-v", "error",
@@ -74,15 +74,16 @@ def probe_fps(path: Path) -> float:
 
 
 def drawtext_escape(text: str) -> str:
-    """Escape tekst for bruk i drawtext=text=...
+    """Escape text for use in drawtext=text=...
 
-    NB (verifisert 2026-07-05):
-    - alle drawtext-kall MÅ ha :expansion=none — det finnes ingen fungerende
-      escape for literal '%' med expansion=normal ("Stray %").
-    - ASCII-apostrof kan IKKE escapes robust gjennom filtergraf- OG
-      drawtext-parsenivået (gammel \\\\\\' knakk grafen når senere args hadde
-      kommaer; '\\''-trikset spises av drawtext). Byttes til typografisk ’,
-      som rendres pent og er parser-nøytral."""
+    Note (verified 2026-07-05):
+    - every drawtext call MUST use :expansion=none. There is no working
+      escape for a literal '%' with expansion=normal ("Stray %").
+    - an ASCII apostrophe can NOT be escaped reliably through both the
+      filtergraph AND the drawtext parsing level (the old \\\\\\' broke the
+      graph when later args had commas; the '\\'' trick gets eaten by
+      drawtext). It's replaced with a typographic ’, which renders nicely
+      and is parser-neutral."""
     return (
         text.replace("\\", "\\\\")
         .replace(":", "\\:")
@@ -90,4 +91,4 @@ def drawtext_escape(text: str) -> str:
     )
 
 
-FONT_FILE = "C\\:/Windows/Fonts/arialbd.ttf"  # kolon escapet for filteruttrykk
+FONT_FILE = "C\\:/Windows/Fonts/arialbd.ttf"  # colon escaped for filter expressions
