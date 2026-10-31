@@ -24,6 +24,7 @@ jobs:
       - name: Tag and publish
         env:
           GH_TOKEN: ${{ github.token }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           version=$(grep -oP '^__version__ = "\K[^"]+' lib/version.py)
           tag="v$version"
@@ -36,3 +37,11 @@ jobs:
           fi
           gh release create "$tag" --target "$GITHUB_SHA" --title "Fragsmith $tag" --generate-notes
           echo "Published $tag"
+          python3 tools/notify.py release "$tag" "$(gh release view "$tag" --json url --jq .url)"
+      - name: Tell the maintainer on Discord
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          COMMIT_TITLE: ${{ github.event.head_commit.message }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 tools/notify.py failed release main push "$RUN_URL"

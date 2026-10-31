@@ -78,6 +78,12 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - GitHub's issue list with a label filter lags a few seconds behind a newly created issue. Two watcher runs right after each other can therefore open a duplicate (it happened in the M5 test: #10 and #11). Harmless with a daily schedule; just don't run it twice in a row.
 - Closing keywords (`Closes #12`) only work for PRs into the default branch. The tested-versions PR goes to `develop`, so the watcher closes an `upstream` issue itself once its version is in `compat/tested-versions.json` on `main`.
 
+## Notifications
+
+- Discord webhooks ping whoever a message mentions. The texts include commit titles, which anyone with a PR can write, so `tools/notify.py` always sends `allowed_mentions: {"parse": []}`. Without it, a commit titled `@everyone` would ping the whole server.
+- Repo secrets aren't given to workflows triggered by fork PRs (or Dependabot). Notifications only run on push, schedule and manual events, and `notify.py` exits 0 when the secret is missing.
+- `workflow_dispatch` workflows (like `notify-test`) can only be started once the file is on the default branch.
+
 ## Testing
 
 - `freezedetect`/YDIF can't verify a freeze frame when film grain is on, since grain changes every frame. Use a contact sheet (`fps=5` + `tile`) instead.

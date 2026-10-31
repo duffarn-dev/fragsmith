@@ -1,0 +1,19 @@
+name: notify-test
+
+# Sends one sample of each Discord notification, marked [test]. Use it after
+# changing the webhook (the DISCORD_WEBHOOK_URL secret) or the message texts.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Send sample notifications
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python3 tools/notify.py demo

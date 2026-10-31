@@ -25,6 +25,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import notify  # noqa: E402  (tools/notify.py: Discord message for each new issue)
+
 ROOT = Path(__file__).resolve().parent.parent
 TESTED_FILE = ROOT / "compat" / "tested-versions.json"
 API = "https://api.github.com"
@@ -186,7 +189,7 @@ def plan(tested: dict, latest: dict[str, Latest], existing: list[dict]) -> list[
         prefix = issue_title(tool, "")
         stale = [i["number"] for i in existing if i["state"] == "open" and i["title"].startswith(prefix)]
         actions.append({"tool": tool, "title": title, "body": issue_body(tool, tested[tool.key], new),
-                        "close": stale})
+                        "close": stale, "tested": tested[tool.key], "new": new.version})
     return actions
 
 
@@ -258,9 +261,11 @@ def main() -> int:
     for a in actions:
         if args.dry_run:
             print(f"would open: {a['title']}" + (f" (and close #{a['close']})" if a["close"] else ""))
+            notify.send(notify.upstream_message(a["tool"].name, a["tested"], a["new"], "<issue>"), dry_run=True)
             continue
         issue = gh.create_issue(a["title"], a["body"])
         print(f"opened #{issue['number']}: {a['title']} {issue['html_url']}")
+        notify.send(notify.upstream_message(a["tool"].name, a["tested"], a["new"], issue["html_url"]))
         for old in a["close"]:
             gh.close(old, f"Superseded by #{issue['number']}.", "not_planned")
             print(f"closed #{old} (superseded)")

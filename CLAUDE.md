@@ -41,7 +41,8 @@ working without the package installed.
 ## Fixed rules
 - Read `learnings_runtime.md` as step 0 of every run — BEFORE anything else.
   That's main.py's job.
-- English in all user-facing messages.
+- English in all user-facing messages. The one exception: Discord
+  notifications to the maintainer (`tools/notify.py`) are in Norwegian.
 - Every csdm/ffmpeg command is logged verbatim with exit code + stderr.
 - Failed clips are never swallowed silently — log and flag them in report.md.
 - Temp files (raw clips) are deleted ONLY with `cleanup` or after confirmation.
