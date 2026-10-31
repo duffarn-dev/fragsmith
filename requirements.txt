@@ -1,5 +1,5 @@
 # Parse + scoring
-demoparser2>=2.13
+demoparser2>=0.41.3
 pydantic>=2.0
 
 # AI Director (optional: only needed when Claude makes the edit plan)
