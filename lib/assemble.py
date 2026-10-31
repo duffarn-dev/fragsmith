@@ -300,7 +300,6 @@ def assemble(
     )
 
     total = probe_duration(timeline)
-    fade_start = max(0.0, total - 3.0)
     final = run_dir / "final.mp4"
 
     # SFX layer: whoosh into every clip change, impact on big kills (same
@@ -351,6 +350,10 @@ def assemble(
     # music_offset > 0 → the track starts partway in (so the drop hits the
     # climax); short fade-in so the jump-in doesn't pop
     off = max(0.0, float(music_offset))
+    # a track shorter than the film fades out where it ends instead of
+    # cutting off mid-bar (cmd_finish flags it in the report)
+    music_end = min(total, probe_duration(music_path) - off)
+    fade_start = max(0.0, music_end - 3.0)
     music_chain = (
         f"[1:a]atrim={off:.3f}:{off + total:.3f},asetpts=PTS-STARTPTS,"
         + ("afade=t=in:st=0:d=0.8," if off > 0 else "")

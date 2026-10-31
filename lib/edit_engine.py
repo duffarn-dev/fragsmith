@@ -742,7 +742,7 @@ def _climax_clip_id(plan: EditPlan) -> str | None:
     return explicit[0] if explicit else decisions[-1].clip_id
 
 
-def _simulate_climax_start(
+def _simulate_timeline(
     plan: EditPlan,
     candidates_by_id: dict,
     clips_dir: Path,
@@ -750,27 +750,25 @@ def _simulate_climax_start(
     cfg: dict,
     timeline_start: float,
     dur_cache: dict,
-) -> float | None:
-    """Predict where on the timeline the climax clip starts, using the same
-    snapping rules as build_segments (pure arithmetic + ffprobe, no
-    encoding). Returns None if the climax raw clip is missing."""
+) -> tuple[float | None, float]:
+    """Predict (where the climax clip starts, where the last segment ends)
+    on the timeline, using the same snapping rules as build_segments (pure
+    arithmetic + ffprobe, no encoding). The climax start is None if the
+    climax raw clip is missing."""
     editing = cfg.get("editing", {})
     fx = cfg.get("effects", {})
     tolerance = float(editing.get("beat_tolerance_seconds", 0.75))
     target_id = _climax_clip_id(plan)
-    if target_id is None:
-        return None
     replay_pick = pick_replay_clip(plan, candidates_by_id, cfg)
 
+    climax_start: float | None = None
     pos = timeline_start
     for d in sorted(plan.decisions, key=lambda d: d.order):
         clip = clips_dir / f"{d.clip_id}.mp4"
         if not clip.exists():
-            if d.clip_id == target_id:
-                return None
             continue  # build_segments also skips missing clips
         if d.clip_id == target_id:
-            return pos
+            climax_start = pos
         if d.clip_id not in dur_cache:
             dur_cache[d.clip_id] = probe_duration(clip)
         duration = dur_cache[d.clip_id]
@@ -783,7 +781,7 @@ def _simulate_climax_start(
             if snapped is not None and snapped - pos >= 2.0
             else desired_end
         )
-        # rare: a replay on a clip BEFORE the climax pushes the timeline
+        # the replay segment right after its clip pushes the timeline too
         if replay_pick and replay_pick[0] == d.clip_id:
             src = clips_dir / f"{d.clip_id}_alt.mp4"
             if not src.exists():
@@ -794,7 +792,30 @@ def _simulate_climax_start(
             w0 = max(0.0, replay_pick[1].offset_s - REPLAY_PRE_S)
             w1 = min(dur_cache[key], replay_pick[1].offset_s + REPLAY_POST_S)
             pos += REPLAY_REWIND_S + (w1 - w0) / REPLAY_FACTOR
-    return None
+    return climax_start, pos
+
+
+def _simulate_climax_start(
+    plan: EditPlan,
+    candidates_by_id: dict,
+    clips_dir: Path,
+    beats: dict,
+    cfg: dict,
+    timeline_start: float,
+    dur_cache: dict,
+) -> float | None:
+    """Where the climax clip starts (see _simulate_timeline)."""
+    return _simulate_timeline(
+        plan, candidates_by_id, clips_dir, beats, cfg, timeline_start, dur_cache
+    )[0]
+
+
+def outro_seconds(cfg: dict) -> float:
+    """Outro card length as assemble builds it (the stats outro is at least
+    3.5 s so its lines can be read)."""
+    editing = cfg.get("editing", {})
+    outro = float(editing.get("outro_seconds", 2.5))
+    return max(outro, 3.5) if editing.get("stats_outro", False) else outro
 
 
 # The intro card's length is a lever for drop sync. These limits keep the
@@ -895,7 +916,19 @@ def plan_drop_sync(
             if off > 0:
                 shifted = shift_beats(beats, off)
                 c = climax_start(shifted, base_intro)
-                if c is not None and abs(c - (drop_t - off)) <= tolerance:
+                # the rest of the track must cover the whole film, or the
+                # music stops before the outro (seen: 1:45 of music, 1:54 film)
+                _, seg_end = _simulate_timeline(
+                    plan, candidates_by_id, clips_dir, shifted, cfg,
+                    base_start + base_intro, dur_cache,
+                )
+                film_end = seg_end + outro_seconds(cfg)
+                music_left = float(beats.get("duration_seconds", 0.0)) - off
+                if (
+                    c is not None
+                    and abs(c - (drop_t - off)) <= tolerance
+                    and music_left >= film_end
+                ):
                     return result(
                         shifted, base_intro, off, "offset",
                         drop_t, c - (drop_t - off),

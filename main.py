@@ -632,6 +632,15 @@ def cmd_finish(args: argparse.Namespace) -> int:
         print(f"STOPPED in step 7: {exc}")
         return 1
 
+    film_s = probe_duration(final)
+    music_left = beats["duration_seconds"] - music_offset
+    if music_left < film_s - 0.5:
+        flags.append(
+            f"The music ({plan.music_track}) runs out {film_s - music_left:.0f} s "
+            f"before the film ends, so it fades out early. Pick a longer track "
+            f"with: python main.py finish {args.run_dir} --music <file>"
+        )
+
     report = write_report(
         plan, candidates_by_id, cut_log, flags, beats_used, final, run_dir,
         events=events,

@@ -140,10 +140,13 @@ def build_fixture(tmp: Path):
     return clips, candidates, plan
 
 
-def beats_grid(drop_times: list[float], bpm: float = 120.0) -> dict:
+def beats_grid(
+    drop_times: list[float], bpm: float = 120.0, track_s: float = 180.0
+) -> dict:
     period = 60.0 / bpm
-    n = int(180.0 / period)
+    n = int(track_s / period)
     return {
+        "duration_seconds": track_s,
         "bpm": bpm,
         "beat_times": [round(i * period, 3) for i in range(1, n)],
         "drops": [
@@ -241,6 +244,17 @@ def main() -> None:
                   start2 is not None
                   and abs(start2 - ds2["drop_timeline_s"]) <= 0.150,
                   f"start {start2:.3f} s vs drop {ds2['drop_timeline_s']} s")
+            film_end = cut_log2[-1]["timeline_end_s"]
+            check("rest of the track covers the film",
+                  180.0 - ds2["music_offset"] >= film_end,
+                  f"{180.0 - ds2['music_offset']:.1f} s music, "
+                  f"segments end at {film_end:.1f} s")
+
+        # same drop, but the track ends shortly after it: starting the music
+        # that far in would leave the end of the film silent
+        short = beats_grid([drop_b], track_s=drop_b + 4.0)
+        check("offset rejected when the rest of the track is too short",
+              plan_drop_sync(plan, candidates, clips, short, cfg, hook_s) is None)
 
         # -- fallback: no drops / drop_sync off -----------------------------
         print("fallback:")
