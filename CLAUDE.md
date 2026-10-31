@@ -50,6 +50,15 @@ working without the package installed.
 - Personal data (SteamIDs, paths, hosts) lives only in `config.toml`, which
   is gitignored. Never commit it; `config.example.toml` holds placeholders.
 
+## Git workflow (`docs/development.md`)
+- `main` = released, `develop` = next version. Both are protected: NEVER push
+  to them directly; every change is a PR.
+- Branch `feature/…`, `fix/…` or `docs/…` from `develop`, PR to `develop`,
+  squash merge. PR title in Conventional Commits form (`feat:`, `fix:`, …).
+- Release = PR `develop` → `main`, merge commit (never squash).
+- Hotfix = branch from `main`, PR to `main` (merge commit), then PR `main` →
+  `develop`.
+
 ## Known players
 Configured in `config.toml` `[players].known_players`. The pipeline picks
 whichever of them is in the demo; if several are, the highest total hype
@@ -57,7 +66,9 @@ score wins. `--player <steamid64>` overrides.
 
 ## Notes
 - `docs/dev-notes.md` — traps and patterns discovered while BUILDING the
-  project. Read before changing code here.
+  project. Read before changing code here. When something goes wrong in a
+  non-obvious way, add a line here (or to `troubleshooting.md` if users can
+  hit it) in the SAME PR as the fix, and mention it in the status.
 - `docs/troubleshooting.md` — known issues when RUNNING it.
 - `learnings_runtime.md` — the user's own notes from runs. Suggest additions
   after a run; the user approves.
