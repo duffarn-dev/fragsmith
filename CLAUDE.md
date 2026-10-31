@@ -57,7 +57,7 @@ working without the package installed.
   squash merge. PR title in Conventional Commits form (`feat:`, `fix:`, …).
 - Release = PR `develop` → `main`, merge commit (never squash).
 - Hotfix = branch from `main`, PR to `main` (merge commit), then PR `main` →
-  `develop`.
+  `develop` (merge commit, NOT squash).
 
 ## Known players
 Configured in `config.toml` `[players].known_players`. The pipeline picks

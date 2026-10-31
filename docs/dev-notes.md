@@ -54,6 +54,11 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 
 - Effects that add content at the **front** of the timeline (the cold open) must be counted into the beat-sync start position. Forgetting this put all beat sync ~0.75 s off with `intro_hook` on.
 
+## GitHub workflow
+
+- Branch rulesets can limit the merge method per branch (`allowed_merge_methods` in the `pull_request` rule). `main` allows only merge commits, `develop` allows squash and merge. `develop` needs both: squash for feature PRs, merge for syncing a hotfix back from `main`. A squashed sync would give `develop` a copy of the hotfix commit instead of the commit itself, and the next release would carry both.
+- The rulesets have no bypass actors, so the repo owner can't push to `main` or `develop` either. That's intended: every change is a PR.
+
 ## Testing
 
 - `freezedetect`/YDIF can't verify a freeze frame when film grain is on, since grain changes every frame. Use a contact sheet (`fps=5` + `tile`) instead.

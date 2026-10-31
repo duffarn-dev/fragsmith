@@ -15,7 +15,7 @@ hotfix/z ──merge commit──────►  main     (released code, what 
 | Branch | What it is | How changes get in |
 |---|---|---|
 | `main` | The released version. The default branch, so a fresh clone is always the last release. | Only via a PR from `develop` (a release) or from `hotfix/…`, merged with a **merge commit**. |
-| `develop` | The next version. Finished features wait here until release day. | Only via a PR, **squash** merged, so each feature becomes one commit. |
+| `develop` | The next version. Finished features wait here until release day. | Only via a PR. Feature PRs are **squash** merged, so each feature becomes one commit. A PR that brings a hotfix back from `main` is merged with a **merge commit**. |
 | `feature/…`, `fix/…`, `docs/…` | One branch per change, cut from `develop`. | Deleted automatically after merge. |
 | `hotfix/…` | An urgent fix for the released version, cut from `main`. | PR to `main`, then `main` is merged back into `develop`. |
 
@@ -68,7 +68,7 @@ When the released version is broken and can't wait for release day (typically af
 
 1. `git switch main && git pull && git switch -c hotfix/short-name`
 2. Fix it, then open a PR to `main` and merge it with a merge commit.
-3. Open a PR from `main` to `develop` so the fix isn't lost in the next release.
+3. Open a PR from `main` to `develop` so the fix isn't lost in the next release. Merge it with a **merge commit**, not squash, so `develop` gets the same commit as `main` rather than a copy of it.
 
 ## Learnings
 
