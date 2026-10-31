@@ -38,6 +38,8 @@ They need ffmpeg on your PATH. See [tests/README.md](tests/README.md) for patter
 
 ## Pull requests
 
+- Branch from `develop` and open the PR against `develop`, not `main`. `main` only holds released code. The full branch model is in [docs/development.md](docs/development.md).
+- Give the PR a [Conventional Commits](https://www.conventionalcommits.org/) title (`feat: ...`, `fix: ...`, `docs: ...`). It becomes the commit message and the line in the release notes.
 - Keep each PR to one change, and run the tests before you open it.
 - Match the style of the code around your change: comments explain *why*, not *what*.
 - New effects get a config flag (off by default if they're loud), an entry in [docs/effects.md](docs/effects.md), and must survive `[effects].enabled = false`.
