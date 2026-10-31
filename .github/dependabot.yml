@@ -10,6 +10,7 @@ updates:
     target-branch: develop
     commit-message:
       prefix: ci
+    labels: ["ci"]  # instead of Dependabot's own "dependencies" labels
     groups:
       actions:
         patterns: ["*"]

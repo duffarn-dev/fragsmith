@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting guide
+    url: https://github.com/duffarn-dev/fragsmith/blob/main/docs/troubleshooting.md
+    about: Known problems (HLAE after CS2 updates, old demos, CS Demo Manager open) and their fixes.
+  - name: Report a security or privacy problem
+    url: https://github.com/duffarn-dev/fragsmith/security/advisories/new
+    about: Privately, so it isn't public before it's fixed.

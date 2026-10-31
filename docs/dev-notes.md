@@ -62,6 +62,8 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - Scheduled workflows always run on the default branch (`main`). The Monday test run therefore tests the released code against new dependency releases, which is what users hit.
 - Dependabot **security** updates always open PRs against the default branch, ignoring `target-branch`. That would bypass `develop`, so only Dependabot *alerts* are on, and version updates are limited to GitHub Actions.
 - With `core.autocrlf=true` (the Git for Windows default), shell hooks get CRLF line endings on checkout and break under `sh`. `.gitattributes` pins `.githooks/*` to LF.
+- `gh pr merge` suggests `--admin` when a PR is blocked. It doesn't help here: the rulesets have no bypass actors, so `current_user_can_bypass` is `never`, even for the owner.
+- Issue forms, `config.yml` and the PR template are read from the **default branch** only. Changes to them on `develop` show up on GitHub after the next release to `main`.
 - Commits that GitHub creates (the squash and merge buttons, `gh pr merge`) take the author name and email from the GitHub **account**, not from the local `git config`. Turn on "Keep my email addresses private" (github.com/settings/emails) before the first merge, or the account's primary email lands in public history. It happened here once: the squash commit had to be rewritten, and the old commit stays reachable through the PR until GitHub Support removes it.
 
 ## Testing
