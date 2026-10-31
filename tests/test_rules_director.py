@@ -163,6 +163,7 @@ if __name__ == "__main__":
     test_split_clutch()
     test_edge_cases()
     test_no_anthropic_needed()
+    check("deliberate failure: proves a red check blocks merging", False)
     print()
     if FAILS:
         print(f"FAILED: {len(FAILS)}: {FAILS}")
