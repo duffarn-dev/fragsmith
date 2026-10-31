@@ -203,6 +203,14 @@ def _check_render(r: Report, cfg: dict) -> None:
                 "Install it from https://cs-demo-manager.com, open it once and "
                 "finish the setup wizard. Or set [render].csdm_path.",
             )
+        import worker
+
+        if worker.csdm_app_running():
+            r.warn(
+                "The CS Demo Manager app is open",
+                "Close it before rendering (check the system tray too). While "
+                "it runs, CS2 connects to the app and rendering hangs.",
+            )
         cs2 = find_cs2()
         if cs2:
             r.ok(f"CS2: {cs2}")

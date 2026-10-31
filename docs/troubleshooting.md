@@ -12,7 +12,11 @@ Ways to get fresh demos:
 
 ## Rendering fails right after a CS2 update
 
-CS2 updates break HLAE from time to time. Update CS Demo Manager (it fetches a new HLAE) and try again. The worker stops after 2 failures in a row instead of retrying blindly.
+CS2 updates break HLAE from time to time. Symptom: a stream of "Error - AfxHookSource2 / Problem in ...\addresses.cpp" dialogs when CS2 starts. Fix: update HLAE in the CS Demo Manager app (**Settings → Video → HLAE**). Updating CS Demo Manager itself does *not* update HLAE. If the newest HLAE is older than the CS2 update, wait a few days for a new HLAE release. The worker stops after 2 failures in a row instead of retrying blindly.
+
+## CS2 starts but nothing renders
+
+If CS2 sits at the demo for many minutes and no clips appear, check whether the **CS Demo Manager app** is open (also in the system tray). The app and `csdm video` use the same port to talk to CS2, so CS2 connects to the app and the render waits forever. Close the app before rendering. Fragsmith checks for this before it starts CS2, and `python main.py doctor` warns about it.
 
 ## Rendering "succeeded" but clips are missing
 

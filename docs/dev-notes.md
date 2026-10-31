@@ -19,6 +19,8 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - Enums: `recordingSystem` HLAE|CS, `encoderSoftware` FFmpeg|VirtualDub, `recordingOutput` video|images|images-and-video.
 - Output names: `sequence-<N>-tick-<start>-to-<end>.<container>`.
 - The **default** ffmpeg container is AVI (+ mp3 audio, crf 23). Always send explicit `ffmpegSettings` (mp4/aac/crf 18). An early bug: the worker globbed `*.mp4` and deleted the raw folder containing the AVIs. Rule: never delete work files when the expected output is missing.
+- The CS Demo Manager **desktop app** listens on port 4574, the same port `csdm video` uses for CS2's HLAE plugin. With the app open, CS2 connects to the app and `csdm video` waits forever with no output (and exits 0 when killed). `worker.render_job` refuses to start while the port is taken.
+- Updating CS Demo Manager does not update HLAE; HLAE lives in `%USERPROFILE%\.csdm\hlae` and is updated from the app's Settings → Video. csdm rewrites `hlae\ffmpeg\ffmpeg.ini` (pointing at its own ffmpeg) on every render.
 - `framerate` is **global** in the video config, not per sequence (`src/common/types/sequence.ts`). High-fps rendering therefore runs one render pass per framerate (separate CS2 launch, ~1–2 min extra).
 - Sequences have a `cfg` field (per-sequence console commands). That's the way in for in-game FOV zoom.
 

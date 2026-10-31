@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import socket
 import sys
 import tempfile
 import tomllib
@@ -142,6 +143,28 @@ def test_render_local(tmp: Path, csdm: Path) -> None:
           saved["status"] == "failed" and "error" in saved)
 
 
+def test_csdm_app_guard(tmp: Path, csdm: Path) -> None:
+    print("CS Demo Manager app open → refuse to render:")
+    if worker.csdm_app_running():
+        print("  (skipped: something already listens on the csdm port)")
+        return
+    run_dir = tmp / "runs" / "guard"
+    run_dir.mkdir(parents=True)
+    demo = tmp / "match.dem"
+    demo.write_bytes(b"demo")
+    # stand-in for the app: listen on the same port it uses
+    with socket.create_server(("localhost", worker.CSDM_GAME_PORT)):
+        check("app detected", worker.csdm_app_running())
+        try:
+            render_local(make_job("guard"), demo, run_dir,
+                         {"mode": "local", "csdm_path": str(csdm)})
+            check("render refused", False)
+        except RuntimeError as exc:
+            check("render refused with a clear message",
+                  "CS Demo Manager app is open" in str(exc), str(exc)[:60])
+    check("app gone → not detected", not worker.csdm_app_running())
+
+
 def test_queue_still_works(tmp: Path, csdm: Path) -> None:
     print("worker queue (two-PC mode) after the refactor:")
     job_dir = tmp / "queue"
@@ -230,6 +253,7 @@ if __name__ == "__main__":
         if sys.platform == "win32":
             csdm = make_fake_csdm(tmp)
             test_render_local(tmp, csdm)
+            test_csdm_app_guard(tmp, csdm)
             test_queue_still_works(tmp, csdm)
         else:
             print("(skipping fake-csdm tests: Windows only)")

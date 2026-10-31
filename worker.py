@@ -26,6 +26,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -38,6 +39,19 @@ DEFAULT_CSDM = (
     / "Programs" / "cs-demo-manager" / "csdm.cmd"
 )
 POLL_SECONDS = 10
+# CS Demo Manager's desktop app and `csdm video` both serve CS2 on this port
+CSDM_GAME_PORT = 4574
+
+
+def csdm_app_running() -> bool:
+    """True when CS Demo Manager's desktop app is open. It holds the port
+    CS2 connects to, so CS2 talks to the app and `csdm video` waits forever
+    without rendering anything (seen 2026-10-31: 25 min, zero output)."""
+    try:
+        with socket.create_connection(("localhost", CSDM_GAME_PORT), timeout=1):
+            return True
+    except OSError:
+        return False
 
 
 def log(msg: str, job_dir: Path | None = None) -> None:
@@ -203,6 +217,12 @@ def render_job(
     code, _ = run_csdm(csdm, ["analyze", str(demo_path)], log_dir)
     if code != 0:
         raise RuntimeError(f"csdm analyze failed (exit {code}).")
+    if csdm_app_running():
+        raise RuntimeError(
+            "The CS Demo Manager app is open on this PC. Close it (check the "
+            "system tray too) — while it runs, CS2 connects to the app and "
+            "rendering never starts."
+        )
 
     raw_dir = out_dir / "_raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
