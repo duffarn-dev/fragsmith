@@ -1,0 +1,31 @@
+name: Feature or effect idea
+description: Something Fragsmith could do, or a look it could have
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome. Fragsmith is a hobby project, so there are no promises about when (or whether) something gets built, but every idea is read.
+  - type: textarea
+    id: what
+    attributes:
+      label: What should it do?
+      description: Describe the feature or effect. For effects, when in the film should it happen?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it make the films better?
+      description: The moment or problem it's for. A link to a clip or a fragmovie that does it well helps a lot.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you tried instead?
+      description: A config setting, a workaround, another tool.
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Helping out
+      options:
+        - label: I'd like to try building this myself (see CONTRIBUTING.md).

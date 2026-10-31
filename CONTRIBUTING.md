@@ -4,14 +4,14 @@ Thanks for wanting to help. Bug reports, effect ideas and pull requests are all 
 
 ## Reporting a bug
 
-Open an issue with:
+Open an issue and pick **Bug report**. The form asks for:
 
 - what you ran (`python main.py ...`) and what happened
 - the output of `python main.py doctor`
 - for render problems: `worker.log` (in the run folder with one PC, or the job folder with two)
 - for editing problems: `runs/<id>/ffmpeg.log` and `report.md`
 
-Please don't attach demos or `config.toml` publicly. They contain Steam IDs.
+Please don't attach demos or `config.toml` publicly. They contain Steam IDs. The `doctor` output shows your music folder, SSH host and key path, so replace your user name and IP before pasting. Security or privacy problems go to the **Security** tab, not an issue (see [SECURITY.md](SECURITY.md)).
 
 ## Getting started
 

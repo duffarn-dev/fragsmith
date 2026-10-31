@@ -80,6 +80,23 @@ PR titles follow [Conventional Commits](https://www.conventionalcommits.org/), b
 
 A breaking change, such as a renamed config key, gets a `!`: `feat!: rename [render].job_dir`. Describe the migration in the PR.
 
+## Labels
+
+| Label | For | Release notes |
+|---|---|---|
+| `feature` | a new feature or effect | Features |
+| `bug` | something that doesn't work as documented | Fixes |
+| `docs` | documentation only | Docs |
+| `chore`, `ci` | cleanup, dependencies, automation | Maintenance |
+| `upstream` | a new CS2, HLAE, CS Demo Manager or demoparser2 version (opened by the watcher) | Compatibility |
+| `breaking` | changes config, CLI or output incompatibly | listed first |
+| `skip-changelog` | left out of the release notes | — |
+| `good first issue`, `help wanted` | invitations to contributors | — |
+
+There are no `duplicate`, `wontfix` or `invalid` labels: close the issue as *duplicate* or *not planned* instead, which GitHub records itself.
+
+New issues go through the forms in `.github/ISSUE_TEMPLATE/` (bug report, feature idea). Blank issues are off, and security problems go to the private Security tab.
+
 ## Releases
 
 Releases happen on a fixed day (Friday), but only when there's something finished on `develop`. If nothing is finished, there's no release. The release is a PR from `develop` to `main`, merged with a merge commit.
