@@ -40,8 +40,9 @@ For strings only you know are private (your name, your PC's name), put one regex
 |---|---|
 | `tests` | All suites in `tests/` on Windows, with the oldest and newest supported Python. |
 | `privacy` | `tools/privacy_check.py` on the commits and lines the PR adds. |
+| `pr-title` | The title follows Conventional Commits. The check also sets the labels the release notes are grouped by (`tools/pr_title.py`). |
 
-Both must pass before a PR can be merged into `develop` or `main`. Both also run every Monday against `main` with the newest dependency releases, so a breaking upstream release shows up even when nobody is working on the code.
+All three must pass before a PR can be merged into `develop` or `main`. `tests` and `privacy` also run every Monday against `main` with the newest dependency releases, so a breaking upstream release shows up even when nobody is working on the code.
 
 CI runs **after** a push, when the branch is already public. The pre-commit hook is the check that actually keeps things private. CI is the safety net, and it covers contributors who don't have the hook.
 
@@ -80,6 +81,10 @@ PR titles follow [Conventional Commits](https://www.conventionalcommits.org/), b
 
 A breaking change, such as a renamed config key, gets a `!`: `feat!: rename [render].job_dir`. Describe the migration in the PR.
 
+Also accepted: `perf:` (counts as a feature), `refactor:` and `revert:` (maintenance), `build:` (CI). An optional lowercase scope goes in parentheses: `fix(render): ...`. The `release` scope (`chore(release): v0.2.0`) is reserved for version bumps and release PRs, which stay out of the release notes.
+
+The `pr-title` check rejects other titles and sets the labels from the prefix (see [Labels](#labels)). To fix a rejected title, edit it on GitHub; the check runs again.
+
 ## Labels
 
 | Label | For | Release notes |
@@ -99,7 +104,7 @@ New issues go through the forms in `.github/ISSUE_TEMPLATE/` (bug report, featur
 
 ## Releases
 
-Releases happen on a fixed day (Friday), but only when there's something finished on `develop`. If nothing is finished, there's no release. The release is a PR from `develop` to `main`, merged with a merge commit.
+Releases happen on a fixed day (Friday), but only when there's something finished on `develop`. If nothing is finished, there's no release. The release is a PR from `develop` to `main`, merged with a merge commit. The `release` workflow then tags `main` and publishes the release notes. The full checklist is in [releasing.md](releasing.md).
 
 ## Hotfixes
 

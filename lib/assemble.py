@@ -17,6 +17,7 @@ from lib.ffmpeg_util import (
     run_ffmpeg,
 )
 from lib.models import EditPlan
+from lib.version import __version__
 
 
 def _text_card(
@@ -413,7 +414,7 @@ def write_report(
     lines = [
         f"# Fragsmith report — {Path(plan.demo_path).name}",
         "",
-        f"**Generated:** {datetime.now():%Y-%m-%d %H:%M}",
+        f"**Generated:** {datetime.now():%Y-%m-%d %H:%M} by Fragsmith {__version__}",
         f"**Film:** {final_path.name} ({final_duration:.1f} s)",
         f"**Music:** {plan.music_track} ({beats.get('bpm', '?')} BPM)",
     ]
