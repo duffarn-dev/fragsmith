@@ -9,6 +9,8 @@ Run them directly, no pytest needed:
     python tests/test_render_modes.py
     python tests/test_privacy_check.py
     python tests/test_release.py
+    python tests/test_upstream_watch.py
+    python tests/test_notify.py
 
 GitHub Actions runs every `tests/test_*.py` on each pull request (`.github/workflows/tests.yml`), so a new suite only needs to follow the same pattern: exit code 1 when anything fails.
 

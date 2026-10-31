@@ -1,0 +1,48 @@
+name: upstream-watch
+
+# Daily: is there a newer CS2, HLAE, CS Demo Manager or demoparser2 than the
+# versions in compat/tested-versions.json? Opens one `upstream` issue per new
+# version (see docs/compatibility.md). Scheduled runs use main, i.e. the versions
+# the released Fragsmith was tested with.
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only print what would happen
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check for new upstream versions
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            python3 tools/upstream_watch.py --dry-run
+          else
+            python3 tools/upstream_watch.py
+          fi
+      - name: Tell the maintainer on Discord
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          BRANCH: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 tools/notify.py failed upstream-watch "$BRANCH" "$EVENT" "$RUN_URL"

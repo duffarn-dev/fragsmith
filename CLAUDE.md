@@ -41,7 +41,8 @@ working without the package installed.
 ## Fixed rules
 - Read `learnings_runtime.md` as step 0 of every run — BEFORE anything else.
   That's main.py's job.
-- English in all user-facing messages.
+- English in all user-facing messages. The one exception: Discord
+  notifications to the maintainer (`tools/notify.py`) are in Norwegian.
 - Every csdm/ffmpeg command is logged verbatim with exit code + stderr.
 - Failed clips are never swallowed silently — log and flag them in report.md.
 - Temp files (raw clips) are deleted ONLY with `cleanup` or after confirmation.
@@ -78,6 +79,9 @@ score wins. `--player <steamid64>` overrides.
 - `learnings_runtime.md` — the user's own notes from runs. Suggest additions
   after a run; the user approves.
 - `docs/effects.md` — every effect and its config flag.
+- `docs/compatibility.md` — tested versions (`compat/tested-versions.json`,
+  only changed after a real end-to-end test), the daily upstream watcher
+  (`tools/upstream_watch.py`) and what to do when an update breaks things.
 
 ## CLI
 `run <demo>` (steps 0-3, phase stop) · `render <run-dir>` (step 4: queue the

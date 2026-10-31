@@ -66,8 +66,23 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - The `pr-title` workflow uses `pull_request`, not `pull_request_target`. `pull_request_target` would give fork PRs a write token, but its check runs attach to the base commit, which is a poor fit for a required check. The cost: fork and Dependabot PRs get a read-only token, so the workflow only checks their title and doesn't label them.
 - A PR title is untrusted input. Workflows pass it through `env:` and never interpolate `${{ github.event.pull_request.title }}` into a `run:` script, where a crafted title could inject shell commands.
 - Release notes come from PR labels. A PR without a type label lands under "Other", so `tools/pr_title.py` derives the label from the title instead of relying on people.
-- Issue forms, `config.yml` and the PR template are read from the **default branch** only. Changes to them on `develop` show up on GitHub after the next release to `main`.
+- Issue forms, `config.yml` and the PR template are read from the **default branch** only. The GraphQL `issueTemplates` field doesn't list issue *forms*, so check them in a browser at `/issues/new/choose`.
+- A required issue-form dropdown preselects its first option, so a hasty reporter submits a wrong answer without noticing. Optional dropdowns show "None" instead.
+- With private vulnerability reporting on, GitHub adds its own "Report a security vulnerability" entry to the issue chooser. Don't add a contact link for it as well.
+- A PR whose merge commit was rewritten afterwards (force push) disappears from generated release notes: GitHub can't link it to the history anymore. v0.1.0 lists PR #1 by hand for that reason. Changes to them on `develop` show up on GitHub after the next release to `main`.
 - Commits that GitHub creates (the squash and merge buttons, `gh pr merge`) take the author name and email from the GitHub **account**, not from the local `git config`. Turn on "Keep my email addresses private" (github.com/settings/emails) before the first merge, or the account's primary email lands in public history. It happened here once: the squash commit had to be rewritten, and the old commit stays reachable through the PR until GitHub Support removes it.
+
+## Upstream watcher
+
+- Steam's `ISteamApps/UpToDateCheck/v1/?appid=730&version=0` answers with the current CS2 version in `message` ("Server version required: 1.41.9.4"), the same format as `PatchVersion` in the installed `game/csgo/steam.inf`. No API key needed. The same goes for GitHub's `releases/latest` (which skips drafts and pre-releases) and PyPI's JSON API.
+- GitHub's issue list with a label filter lags a few seconds behind a newly created issue. Two watcher runs right after each other can therefore open a duplicate (it happened in the M5 test: #10 and #11). Harmless with a daily schedule; just don't run it twice in a row.
+- Closing keywords (`Closes #12`) only work for PRs into the default branch. The tested-versions PR goes to `develop`, so the watcher closes an `upstream` issue itself once its version is in `compat/tested-versions.json` on `main`.
+
+## Notifications
+
+- Discord webhooks ping whoever a message mentions. The texts include commit titles, which anyone with a PR can write, so `tools/notify.py` always sends `allowed_mentions: {"parse": []}`. Without it, a commit titled `@everyone` would ping the whole server.
+- Repo secrets aren't given to workflows triggered by fork PRs (or Dependabot). Notifications only run on push, schedule and manual events, and `notify.py` exits 0 when the secret is missing.
+- `workflow_dispatch` workflows (like `notify-test`) can only be started once the file is on the default branch.
 
 ## Testing
 

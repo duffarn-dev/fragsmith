@@ -46,6 +46,21 @@ All three must pass before a PR can be merged into `develop` or `main`. `tests` 
 
 CI runs **after** a push, when the branch is already public. The pre-commit hook is the check that actually keeps things private. CI is the safety net, and it covers contributors who don't have the hook.
 
+## Notifications
+
+The maintainer gets a Discord message (`tools/notify.py`, through the `DISCORD_WEBHOOK_URL` repo secret) when:
+
+| Event | From |
+|---|---|
+| a new CS2, HLAE, CS Demo Manager or demoparser2 version (with a link to the new `upstream` issue) | `upstream-watch` |
+| `tests` or `privacy` fails on `develop` or `main`, or in the Monday run | `tests`, `privacy` |
+| the upstream watcher or the release workflow itself fails | `upstream-watch`, `release` |
+| a release is published | `release` |
+
+Failures in pull requests don't notify: the PR shows its red check already. The messages are in Norwegian because they're for the maintainer, not for the repo's readers. All texts live in `tools/notify.py`. Without the secret (forks, local runs), the messages are printed instead of posted.
+
+To check the webhook: **Actions → notify-test → Run workflow** sends one sample of each message, marked `[test]`.
+
 ## Day to day
 
 ```
