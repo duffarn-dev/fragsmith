@@ -23,6 +23,28 @@ Both `main` and `develop` are protected. Nobody can push to them directly, force
 
 **Why two merge methods:** squashing keeps `develop` readable (one commit per PR, titled after the PR). A release must be a merge commit, because a squashed release would give `main` a commit that `develop` doesn't have, and every later release PR would show old changes again.
 
+## One-time setup per clone
+
+```
+git config core.hooksPath .githooks
+git config user.email <id>+<login>@users.noreply.github.com
+```
+
+The hook runs `tools/privacy_check.py --staged` before every commit. It stops the commit if your git email isn't a GitHub noreply address, or if the staged lines contain a real Steam ID, a private IP, a `C:\Users\<name>` path, an email address, a token or a key. Your noreply address is listed at github.com/settings/emails.
+
+For strings only you know are private (your name, your PC's name), put one regex per line in `.privacy-local`. The file is gitignored, and the hook and `--tree`/`--history` runs use it.
+
+## Checks on every pull request
+
+| Check | What it does |
+|---|---|
+| `tests` | All suites in `tests/` on Windows, with the oldest and newest supported Python. |
+| `privacy` | `tools/privacy_check.py` on the commits and lines the PR adds. |
+
+Both must pass before a PR can be merged into `develop` or `main`. Both also run every Monday against `main` with the newest dependency releases, so a breaking upstream release shows up even when nobody is working on the code.
+
+CI runs **after** a push, when the branch is already public. The pre-commit hook is the check that actually keeps things private. CI is the safety net, and it covers contributors who don't have the hook.
+
 ## Day to day
 
 ```

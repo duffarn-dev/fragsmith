@@ -1,0 +1,2 @@
+# Hook scripts run under sh: CRLF line endings would break them on Windows.
+.githooks/* text eol=lf

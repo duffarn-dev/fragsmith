@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stops a commit that would publish personal data or secrets.
+# Enable once per clone:  git config core.hooksPath .githooks
+exec python tools/privacy_check.py --staged

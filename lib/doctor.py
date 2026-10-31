@@ -225,7 +225,7 @@ def _check_render(r: Report, cfg: dict) -> None:
     if mode == "ssh":
         host = render_cfg.get("ssh_host", "")
         if not host:
-            r.fail("[render].ssh_host is empty", "e.g. ssh_host = \"user@192.168.1.50\"")
+            r.fail("[render].ssh_host is empty", "e.g. ssh_host = \"user@192.168.1.50\"")  # privacy-check: ignore
             return
         if not shutil.which("ssh") or not shutil.which("scp"):
             r.fail("ssh/scp not found on PATH",
