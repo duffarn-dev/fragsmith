@@ -72,6 +72,12 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - A PR whose merge commit was rewritten afterwards (force push) disappears from generated release notes: GitHub can't link it to the history anymore. v0.1.0 lists PR #1 by hand for that reason. Changes to them on `develop` show up on GitHub after the next release to `main`.
 - Commits that GitHub creates (the squash and merge buttons, `gh pr merge`) take the author name and email from the GitHub **account**, not from the local `git config`. Turn on "Keep my email addresses private" (github.com/settings/emails) before the first merge, or the account's primary email lands in public history. It happened here once: the squash commit had to be rewritten, and the old commit stays reachable through the PR until GitHub Support removes it.
 
+## Upstream watcher
+
+- Steam's `ISteamApps/UpToDateCheck/v1/?appid=730&version=0` answers with the current CS2 version in `message` ("Server version required: 1.41.9.4"), the same format as `PatchVersion` in the installed `game/csgo/steam.inf`. No API key needed. The same goes for GitHub's `releases/latest` (which skips drafts and pre-releases) and PyPI's JSON API.
+- GitHub's issue list with a label filter lags a few seconds behind a newly created issue. Two watcher runs right after each other can therefore open a duplicate (it happened in the M5 test: #10 and #11). Harmless with a daily schedule; just don't run it twice in a row.
+- Closing keywords (`Closes #12`) only work for PRs into the default branch. The tested-versions PR goes to `develop`, so the watcher closes an `upstream` issue itself once its version is in `compat/tested-versions.json` on `main`.
+
 ## Testing
 
 - `freezedetect`/YDIF can't verify a freeze frame when film grain is on, since grain changes every frame. Use a contact sheet (`fps=5` + `tile`) instead.

@@ -12,7 +12,7 @@ Ways to get fresh demos:
 
 ## Rendering fails right after a CS2 update
 
-CS2 updates break HLAE from time to time. Symptom: a stream of "Error - AfxHookSource2 / Problem in ...\addresses.cpp" dialogs when CS2 starts. Fix: update HLAE in the CS Demo Manager app (**Settings → Video → HLAE**). Updating CS Demo Manager itself does *not* update HLAE. If the newest HLAE is older than the CS2 update, wait a few days for a new HLAE release. The worker stops after 2 failures in a row instead of retrying blindly.
+CS2 updates break HLAE from time to time. Symptom: a stream of "Error - AfxHookSource2 / Problem in ...\addresses.cpp" dialogs when CS2 starts. Fix: update HLAE in the CS Demo Manager app (**Settings → Video → HLAE**). Updating CS Demo Manager itself does *not* update HLAE. If the newest HLAE is older than the CS2 update, wait a few days for a new HLAE release. The worker stops after 2 failures in a row instead of retrying blindly. The versions Fragsmith was last tested with are in [compatibility.md](compatibility.md).
 
 ## CS2 starts but nothing renders
 

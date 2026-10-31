@@ -78,6 +78,9 @@ score wins. `--player <steamid64>` overrides.
 - `learnings_runtime.md` — the user's own notes from runs. Suggest additions
   after a run; the user approves.
 - `docs/effects.md` — every effect and its config flag.
+- `docs/compatibility.md` — tested versions (`compat/tested-versions.json`,
+  only changed after a real end-to-end test), the daily upstream watcher
+  (`tools/upstream_watch.py`) and what to do when an update breaks things.
 
 ## CLI
 `run <demo>` (steps 0-3, phase stop) · `render <run-dir>` (step 4: queue the
