@@ -58,6 +58,7 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 
 - Branch rulesets can limit the merge method per branch (`allowed_merge_methods` in the `pull_request` rule). `main` allows only merge commits, `develop` allows squash and merge. `develop` needs both: squash for feature PRs, merge for syncing a hotfix back from `main`. A squashed sync would give `develop` a copy of the hotfix commit instead of the commit itself, and the next release would carry both.
 - The rulesets have no bypass actors, so the repo owner can't push to `main` or `develop` either. That's intended: every change is a PR.
+- Commits that GitHub creates (the squash and merge buttons, `gh pr merge`) take the author name and email from the GitHub **account**, not from the local `git config`. Turn on "Keep my email addresses private" (github.com/settings/emails) before the first merge, or the account's primary email lands in public history. It happened here once: the squash commit had to be rewritten, and the old commit stays reachable through the PR until GitHub Support removes it.
 
 ## Testing
 
