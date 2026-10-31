@@ -49,13 +49,18 @@ working without the package installed.
   (game updates break HLAE; check whether csdm/HLAE needs an update).
 - Personal data (SteamIDs, paths, hosts) lives only in `config.toml`, which
   is gitignored. Never commit it; `config.example.toml` holds placeholders.
+  The pre-commit hook (`tools/privacy_check.py --staged`) enforces this:
+  never bypass it with `--no-verify`. Deliberate examples get a
+  `privacy-check: ignore` marker on the line.
 
 ## Git workflow (`docs/development.md`)
 - `main` = released, `develop` = next version. Both are protected: NEVER push
   to them directly; every change is a PR.
 - Branch `feature/…`, `fix/…` or `docs/…` from `develop`, PR to `develop`,
   squash merge. PR title in Conventional Commits form (`feat:`, `fix:`, …).
-- Release = PR `develop` → `main`, merge commit (never squash).
+- Release = PR `develop` → `main`, merge commit (never squash). Bump
+  `lib/version.py` first in a `chore(release): vX.Y.Z` PR to `develop`; the
+  `release` workflow tags `main` and publishes the notes (`docs/releasing.md`).
 - Hotfix = branch from `main`, PR to `main` (merge commit), then PR `main` →
   `develop` (merge commit, NOT squash).
 

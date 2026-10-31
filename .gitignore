@@ -9,3 +9,6 @@ __pycache__/
 # Personal files (Steam IDs, paths, processed demos)
 config.toml
 processed.json
+
+# Local privacy-check patterns (your own name, PC name, ...)
+.privacy-local

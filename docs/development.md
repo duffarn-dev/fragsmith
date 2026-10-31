@@ -23,6 +23,29 @@ Both `main` and `develop` are protected. Nobody can push to them directly, force
 
 **Why two merge methods:** squashing keeps `develop` readable (one commit per PR, titled after the PR). A release must be a merge commit, because a squashed release would give `main` a commit that `develop` doesn't have, and every later release PR would show old changes again.
 
+## One-time setup per clone
+
+```
+git config core.hooksPath .githooks
+git config user.email <id>+<login>@users.noreply.github.com
+```
+
+The hook runs `tools/privacy_check.py --staged` before every commit. It stops the commit if your git email isn't a GitHub noreply address, or if the staged lines contain a real Steam ID, a private IP, a `C:\Users\<name>` path, an email address, a token or a key. Your noreply address is listed at github.com/settings/emails.
+
+For strings only you know are private (your name, your PC's name), put one regex per line in `.privacy-local`. The file is gitignored, and the hook and `--tree`/`--history` runs use it.
+
+## Checks on every pull request
+
+| Check | What it does |
+|---|---|
+| `tests` | All suites in `tests/` on Windows, with the oldest and newest supported Python. |
+| `privacy` | `tools/privacy_check.py` on the commits and lines the PR adds. |
+| `pr-title` | The title follows Conventional Commits. The check also sets the labels the release notes are grouped by (`tools/pr_title.py`). |
+
+All three must pass before a PR can be merged into `develop` or `main`. `tests` and `privacy` also run every Monday against `main` with the newest dependency releases, so a breaking upstream release shows up even when nobody is working on the code.
+
+CI runs **after** a push, when the branch is already public. The pre-commit hook is the check that actually keeps things private. CI is the safety net, and it covers contributors who don't have the hook.
+
 ## Day to day
 
 ```
@@ -58,9 +81,30 @@ PR titles follow [Conventional Commits](https://www.conventionalcommits.org/), b
 
 A breaking change, such as a renamed config key, gets a `!`: `feat!: rename [render].job_dir`. Describe the migration in the PR.
 
+Also accepted: `perf:` (counts as a feature), `refactor:` and `revert:` (maintenance), `build:` (CI). An optional lowercase scope goes in parentheses: `fix(render): ...`. The `release` scope (`chore(release): v0.2.0`) is reserved for version bumps and release PRs, which stay out of the release notes.
+
+The `pr-title` check rejects other titles and sets the labels from the prefix (see [Labels](#labels)). To fix a rejected title, edit it on GitHub; the check runs again.
+
+## Labels
+
+| Label | For | Release notes |
+|---|---|---|
+| `feature` | a new feature or effect | Features |
+| `bug` | something that doesn't work as documented | Fixes |
+| `docs` | documentation only | Docs |
+| `chore`, `ci` | cleanup, dependencies, automation | Maintenance |
+| `upstream` | a new CS2, HLAE, CS Demo Manager or demoparser2 version (opened by the watcher) | Compatibility |
+| `breaking` | changes config, CLI or output incompatibly | listed first |
+| `skip-changelog` | left out of the release notes | — |
+| `good first issue`, `help wanted` | invitations to contributors | — |
+
+There are no `duplicate`, `wontfix` or `invalid` labels: close the issue as *duplicate* or *not planned* instead, which GitHub records itself.
+
+New issues go through the forms in `.github/ISSUE_TEMPLATE/` (bug report, feature idea). Blank issues are off, and security problems go to the private Security tab.
+
 ## Releases
 
-Releases happen on a fixed day (Friday), but only when there's something finished on `develop`. If nothing is finished, there's no release. The release is a PR from `develop` to `main`, merged with a merge commit.
+Releases happen on a fixed day (Friday), but only when there's something finished on `develop`. If nothing is finished, there's no release. The release is a PR from `develop` to `main`, merged with a merge commit. The `release` workflow then tags `main` and publishes the release notes. The full checklist is in [releasing.md](releasing.md).
 
 ## Hotfixes
 

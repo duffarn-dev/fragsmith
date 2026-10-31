@@ -212,10 +212,10 @@ def test_setup(tmp: Path) -> None:
 
     ssh = tomllib.loads(build_config(example, {
         "steamids": ids[:1], "music_dir": "C:/m", "mode": "ssh",
-        "ssh_host": "me@10.0.0.5", "ssh_key": r"C:\Users\me\.ssh\k",
+        "ssh_host": "me@10.0.0.5", "ssh_key": r"C:\Users\me\.ssh\k",  # privacy-check: ignore
         "remote_job_dir": "C:/jobs",
     }))
-    check("ssh: host/key/dir", ssh["render"]["ssh_host"] == "me@10.0.0.5"
+    check("ssh: host/key/dir", ssh["render"]["ssh_host"] == "me@10.0.0.5"  # privacy-check: ignore
           and ssh["render"]["ssh_key"] == r"C:\Users\me\.ssh\k"
           and ssh["render"]["remote_job_dir"] == "C:/jobs")
     check("ssh: mode", ssh["render"]["mode"] == "ssh")

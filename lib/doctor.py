@@ -20,6 +20,8 @@ import tomllib
 from pathlib import Path
 from typing import Callable
 
+from lib.version import __version__
+
 PLACEHOLDER_STEAMID = "76561190000000000"
 STEAMID_RE = re.compile(r"^7656119\d{10}$")
 
@@ -225,7 +227,7 @@ def _check_render(r: Report, cfg: dict) -> None:
     if mode == "ssh":
         host = render_cfg.get("ssh_host", "")
         if not host:
-            r.fail("[render].ssh_host is empty", "e.g. ssh_host = \"user@192.168.1.50\"")
+            r.fail("[render].ssh_host is empty", "e.g. ssh_host = \"user@192.168.1.50\"")  # privacy-check: ignore
             return
         if not shutil.which("ssh") or not shutil.which("scp"):
             r.fail("ssh/scp not found on PATH",
@@ -288,7 +290,7 @@ def _check_disk(r: Report, project_dir: Path) -> None:
 
 
 def run_doctor(project_dir: Path) -> int:
-    print("Fragsmith doctor")
+    print(f"Fragsmith {__version__} doctor")
     r = Report()
     _check_python(r)
     _check_ffmpeg(r)
