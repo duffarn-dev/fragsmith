@@ -1,0 +1,60 @@
+name: tests
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+  schedule:
+    # Mondays. Scheduled runs use the default branch (main, the released code)
+    # with the newest dependency releases, so upstream breakage shows up here.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  suite:
+    name: suite (Python ${{ matrix.python }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.14"]  # oldest supported and newest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install ffmpeg
+        run: choco install ffmpeg --no-progress -y
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run test suites
+        shell: bash
+        run: |
+          status=0
+          for t in tests/test_*.py; do
+            echo "::group::$t"
+            python "$t" || { status=1; echo "::error::$t failed"; }
+            echo "::endgroup::"
+          done
+          exit $status
+
+  # The one check the branch rulesets require, so the matrix above can change
+  # without touching the rulesets.
+  tests:
+    needs: suite
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All suites passed
+        run: test "${{ needs.suite.result }}" = "success"

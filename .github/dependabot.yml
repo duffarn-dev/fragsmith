@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # GitHub Actions only. Python packages are left alone on purpose: the `>=`
+  # ranges in requirements.txt would make Dependabot raise users' minimum
+  # versions. New package releases are caught by the weekly test run instead.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: develop
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]

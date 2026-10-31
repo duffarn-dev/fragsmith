@@ -18,7 +18,10 @@ Please don't attach demos or `config.toml` publicly. They contain Steam IDs.
 ```
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
+git config core.hooksPath .githooks
 ```
+
+The last line turns on a pre-commit hook that stops commits containing personal data. Commits must use your GitHub noreply email address (github.com/settings/emails). Pull requests with any other commit email fail the `privacy` check. See [docs/development.md](docs/development.md#one-time-setup-per-clone).
 
 Read [CLAUDE.md](CLAUDE.md) for the architecture in one page and [docs/dev-notes.md](docs/dev-notes.md) for the traps that have already bitten. Most of the interesting code is in `lib/edit_engine.py` (effects) and `lib/hype_score.py` (what counts as a highlight).
 
@@ -32,9 +35,10 @@ python tests/test_highfps.py
 python tests/test_drop_sync.py
 python tests/test_rules_director.py
 python tests/test_render_modes.py
+python tests/test_privacy_check.py
 ```
 
-They need ffmpeg on your PATH. See [tests/README.md](tests/README.md) for patterns worth reusing, such as mock clips at 720p30 instead of 1080p60.
+They need ffmpeg on your PATH. GitHub runs them on every pull request as well. See [tests/README.md](tests/README.md) for patterns worth reusing, such as mock clips at 720p30 instead of 1080p60.
 
 ## Pull requests
 

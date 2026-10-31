@@ -30,7 +30,7 @@ With only one PC you don't need any of this: keep `[render].mode = "local"` and 
 ```toml
 [render]
 mode = "ssh"
-ssh_host = "user@192.168.1.50"
+ssh_host = "user@192.168.1.50"   # privacy-check: ignore
 ssh_key = 'C:\Users\<you>\.ssh\fragsmith_render'
 remote_job_dir = "C:/fragsmith-jobs"
 ```

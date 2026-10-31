@@ -49,6 +49,9 @@ working without the package installed.
   (game updates break HLAE; check whether csdm/HLAE needs an update).
 - Personal data (SteamIDs, paths, hosts) lives only in `config.toml`, which
   is gitignored. Never commit it; `config.example.toml` holds placeholders.
+  The pre-commit hook (`tools/privacy_check.py --staged`) enforces this:
+  never bypass it with `--no-verify`. Deliberate examples get a
+  `privacy-check: ignore` marker on the line.
 
 ## Git workflow (`docs/development.md`)
 - `main` = released, `develop` = next version. Both are protected: NEVER push
