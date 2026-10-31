@@ -246,11 +246,13 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     # Rough estimates: rendering ~2x real time + startup; raw clips ~40 MB/min
     # at 1080p60. High-fps clips scale ~linearly with fps (more frames), and
-    # two passes means one extra CS2 launch (~2 min).
+    # two passes means one extra CS2 launch (~2 min). Two passes only when
+    # the film mixes base-fps and high-fps clips.
+    two_passes = bool(highfps_ids) and len(highfps_ids) < len(chosen)
     fps_scale = high_fps / base_fps if high_fps else 1.0
     est_render_min = (
         total_sec * 2 + high_sec * 2 * (fps_scale - 1)
-        + 120 + (120 if highfps_ids else 0)
+        + 120 + (120 if two_passes else 0)
     ) / 60
     est_disk_mb = (total_sec + high_sec * (fps_scale - 1)) / 60 * 40
 
@@ -279,7 +281,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     if highfps_ids:
         print(
             f"  {len(highfps_ids)} clip(s) rendered at {high_fps} fps "
-            f"(real smooth slow-mo) — rendering runs in 2 passes."
+            f"(real smooth slow-mo)"
+            + (" — rendering runs in 2 passes." if two_passes else ".")
         )
     print(
         f"  Total clip time: {total_sec:.0f} s | rough render estimate: "
@@ -327,10 +330,11 @@ def cmd_render(args: argparse.Namespace) -> int:
     job = build_render_job(run_id, plan, candidates_by_id, pov_steamid, pov_name, cfg)
     high = [c for c in job["clips"] if c.get("framerate")]
     if high:
+        two_passes = len(high) < len(job["clips"])
         print(
             f"{len(high)} clip(s) rendered at {high[0]['framerate']} fps "
-            f"({', '.join(c['clip_id'] for c in high)}) — the worker runs "
-            f"2 render passes (one extra CS2 launch)."
+            f"({', '.join(c['clip_id'] for c in high)})"
+            + (" — 2 render passes (one extra CS2 launch)." if two_passes else ".")
         )
     n_alt = sum(1 for c in job["clips"] if c.get("alt_pov_steamid"))
     if n_alt:
