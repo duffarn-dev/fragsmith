@@ -4,6 +4,7 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 
 ## Demo parsing
 
+- demoparser2 fails at random: about 1 parse in 20 raises (IllegalPathOp, VectorResizeFailure, EntityNotFound) or segfaults the whole process, with both 0.41.3 and 0.42.1, on demos that parse fine the next time. `round_end` can also come back empty without raising. `parse_demo` therefore parses in a child process with up to 3 attempts, and re-reads rounds with a fresh parser if they come back empty. Don't "simplify" this back to an in-process call.
 - Valve matchmaking demos can lack `round_end` for the last round (surrender), so `total_rounds_played` points outside the round list. `parse_demo` synthesizes a final round without a winner.
 - Valve matchmaking stores demos as `.dem.bz2`. `main.py` extracts them automatically and keeps the `.bz2`.
 - demoparser2 columns match the documentation on Valve MM demos (`attacker_`/`user_` prefixes, `total_rounds_played`, `is_warmup_period`, `team_num` 2=T / 3=CT).

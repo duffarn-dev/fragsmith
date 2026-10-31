@@ -24,7 +24,8 @@ from lib.models import EditDecision, EditPlan, Highlight, SlowmoSegment
 
 MAX_CLIPS = 8       # more than this gets long and repetitive
 MIN_CLIPS = 3       # fill up to this even with weaker clips, if there are any
-MIN_SCORE = 3.0     # optional clips need at least this hype score
+MIN_SCORE = 3.5     # optional clips need at least this: a plain 2k (3.0) isn't
+                    # enough, it needs headshots, an AWP, speed or the like
 
 
 def _must_keep(c: Highlight) -> bool:

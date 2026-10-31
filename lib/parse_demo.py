@@ -5,20 +5,39 @@ runs/<id>/00-events.json. Column names in demoparser2 can differ a bit
 between demo sources (Valve MM vs FACEIT), so columns are looked up with
 fallbacks and error messages list the actual columns, so deviations can be
 noted in learnings_runtime.md.
+
+demoparser2 fails at random now and then: in testing, about 1 parse in 20
+raised an exception (IllegalPathOp, VectorResizeFailure, ...) or crashed
+the whole Python process, with both 0.41 and 0.42, on demos that parsed
+fine the next time. parse_demo() therefore parses in a child process and
+retries; a crash can't be caught in-process.
 """
 from __future__ import annotations
 
+import json
 import math
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 from demoparser2 import DemoParser
 
 TEAM_NAMES = {2: "T", 3: "CT"}
 DEFAULT_TICKRATE = 64  # CS2 is 64 tick (subtick doesn't change the demo tickrate)
+PARSE_ATTEMPTS = 3
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 
 class DemoParseError(RuntimeError):
-    """The demo couldn't be parsed or was missing expected events."""
+    """The demo couldn't be parsed or was missing expected events.
+
+    retry=True when the error may be demoparser2's randomness rather than
+    the demo itself."""
+
+    def __init__(self, message: str, retry: bool = False) -> None:
+        super().__init__(message)
+        self.retry = retry
 
 
 def _col(df, *candidates: str) -> str:
@@ -52,7 +71,37 @@ def _team_name(value) -> str:
         return str(value) if value else ""
 
 
-def parse_demo(dem_path: str | Path) -> dict:
+def parse_demo(dem_path: str | Path, attempts: int = PARSE_ATTEMPTS) -> dict:
+    """Parse in a child process, retrying random demoparser2 failures."""
+    dem_path = Path(dem_path)
+    if not dem_path.exists():
+        raise DemoParseError(f"Cannot find the demo file: {dem_path}")
+
+    errors: list[str] = []
+    for attempt in range(1, attempts + 1):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "events.json"
+            proc = subprocess.run(
+                [sys.executable, "-m", "lib.parse_demo", str(dem_path), str(out)],
+                cwd=PROJECT_DIR, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+            )
+            if out.exists():
+                result = json.loads(out.read_text(encoding="utf-8"))
+                if "events" in result:
+                    return result["events"]
+                errors.append(result["error"])
+                if not result["retry"]:
+                    break
+            else:
+                errors.append(f"the parser crashed (exit code {proc.returncode})")
+        if attempt < attempts:
+            print(f"    parse attempt {attempt} failed ({errors[-1]}), retrying ...")
+    suffix = f" (after {len(errors)} attempts)" if len(errors) > 1 else ""
+    raise DemoParseError(errors[-1] + suffix)
+
+
+def parse_demo_in_process(dem_path: str | Path) -> dict:
     dem_path = Path(dem_path)
     if not dem_path.exists():
         raise DemoParseError(f"Cannot find the demo file: {dem_path}")
@@ -75,7 +124,8 @@ def parse_demo(dem_path: str | Path) -> dict:
     except Exception as exc:
         raise DemoParseError(
             f"Couldn't parse player_death events: {exc} "
-            f"(corrupt or unsupported demo?)"
+            f"(corrupt or unsupported demo?)",
+            retry=True,
         ) from exc
 
     if len(deaths) == 0:
@@ -121,6 +171,10 @@ def parse_demo(dem_path: str | Path) -> dict:
 
     # --- Rounds --------------------------------------------------------
     rounds = _parse_rounds(parser)
+    if not rounds:
+        # round_end can come back empty at random (see the module docstring)
+        # without raising, so the process-level retry wouldn't catch it
+        rounds = _parse_rounds(DemoParser(str(dem_path)))
 
     # Fallback: round number from round boundaries if total_rounds_played was missing
     if rounds and any(k["round"] == 0 for k in kills):
@@ -276,3 +330,20 @@ def _parse_players(parser: DemoParser, kills: list[dict]) -> list[dict]:
             if sid and sid not in players:
                 players[sid] = name
     return [{"steamid": sid, "name": name} for sid, name in players.items()]
+
+
+def _child_main(dem_path: str, out_path: str) -> int:
+    """Entry point for parse_demo's child process: writes {"events": ...}
+    or {"error": ..., "retry": ...} to out_path."""
+    try:
+        result = {"events": parse_demo_in_process(dem_path)}
+    except DemoParseError as exc:
+        result = {"error": str(exc), "retry": exc.retry}
+    except Exception as exc:  # noqa: BLE001 — demoparser2's random errors land here
+        result = {"error": f"{type(exc).__name__}: {exc}", "retry": True}
+    Path(out_path).write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(_child_main(sys.argv[1], sys.argv[2]))

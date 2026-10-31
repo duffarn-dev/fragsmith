@@ -6,11 +6,13 @@ Run: python tests/test_render_modes.py
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
 import tempfile
 import tomllib
+from contextlib import redirect_stdout
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -206,7 +208,8 @@ def test_setup(tmp: Path) -> None:
     proj.mkdir()
     (proj / "config.example.toml").write_text(example, encoding="utf-8")
     answers = iter(["123", "76561190000000001", str(tmp), "3", "2", "3"])
-    run_setup(proj, ask=lambda _prompt: next(answers))
+    with redirect_stdout(io.StringIO()):  # setup ends with a (noisy) doctor run
+        run_setup(proj, ask=lambda _prompt: next(answers))
     written = tomllib.loads((proj / "config.toml").read_text(encoding="utf-8"))
     check("run_setup re-asks bad SteamID and bad menu choice, then writes",
           written["players"]["known_players"] == ["76561190000000001"]
@@ -214,7 +217,8 @@ def test_setup(tmp: Path) -> None:
 
     answers = iter(["n"])
     before = (proj / "config.toml").read_text(encoding="utf-8")
-    run_setup(proj, ask=lambda _prompt: next(answers))
+    with redirect_stdout(io.StringIO()):  # setup ends with a (noisy) doctor run
+        run_setup(proj, ask=lambda _prompt: next(answers))
     check("existing config.toml is not overwritten without 'y'",
           (proj / "config.toml").read_text(encoding="utf-8") == before)
 

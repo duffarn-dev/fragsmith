@@ -48,10 +48,11 @@ def hl(
 def test_typical_match() -> None:
     print("typical match:")
     cands = [
-        hl("r03_multikill_00", 3.0, 2, 3),
+        hl("r03_multikill_00", 3.6, 2, 3),  # 2k with something extra
         hl("r07_ace_01", 9.5, 5, 7, kind="ace"),
         hl("r10_multikill_02", 5.5, 3, 10),
-        hl("r12_multikill_03", 3.2, 2, 12),
+        hl("r12_multikill_03", 3.0, 2, 12),  # plain 2k
+        hl("r13_multikill_06", 3.8, 2, 13),
         hl("r15_highlight_single_04", 1.5, 1, 15, kind="highlight_single"),
         hl("r18_clutch_05", 8.0, 3, 18, kind="clutch", clutch_vs=3),
     ]
@@ -64,10 +65,10 @@ def test_typical_match() -> None:
     check("climax (ace) is last", order[-1] == "r07_ace_01", str(order))
     check("hook (second best) is first", order[0] == "r18_clutch_05", str(order))
     check("middle rises in score",
-          [c for c in order[1:-1]] == ["r03_multikill_00", "r12_multikill_03",
+          [c for c in order[1:-1]] == ["r03_multikill_00", "r13_multikill_06",
                                         "r10_multikill_02"], str(order))
-    check("weak single kill is dropped",
-          plan.dropped_clip_ids == ["r15_highlight_single_04"],
+    check("plain 2k and weak single kill are dropped",
+          plan.dropped_clip_ids == ["r12_multikill_03", "r15_highlight_single_04"],
           str(plan.dropped_clip_ids))
     check("ACE overlay", by_id["r07_ace_01"].overlay_text == "ACE")
     check("clutch overlay", by_id["r18_clutch_05"].overlay_text == "1v3 CLUTCH")

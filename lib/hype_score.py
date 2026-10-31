@@ -38,11 +38,8 @@ def build_candidates(
             )
     else:
         pov_candidates = [p for p in known if p in present]
-        if not pov_candidates:
-            flags.append(
-                "None of the known_players from config.toml are in the demo — "
-                "considering all players instead. Check your account list."
-            )
+        fallback = not pov_candidates
+        if fallback:
             pov_candidates = sorted(present)
 
     clutches = detect_won_clutches(events)
@@ -57,7 +54,16 @@ def build_candidates(
         if total > best_total:
             best_pov, best_total, best_clips = pov, total, clips
 
-    if len(pov_candidates) > 1 and not player_override:
+    if player_override:
+        pass
+    elif fallback:
+        flags.append(
+            "None of the known_players from config.toml are in the demo, so "
+            f"the player with the best clips was picked: "
+            f"{_name_of(best_pov, events)} ({best_pov}). Use --player "
+            f"<steamid64> to film someone else."
+        )
+    elif len(pov_candidates) > 1:
         others = [p for p in pov_candidates if p != best_pov]
         flags.append(
             f"Several known accounts in the demo ({len(pov_candidates)}); picked "
