@@ -1,0 +1,20 @@
+# Groups the generated release notes by label. tools/pr_title.py sets the
+# labels from the PR title, so this works without anyone labeling by hand.
+changelog:
+  exclude:
+    labels: [skip-changelog]
+  categories:
+    - title: Breaking changes
+      labels: [breaking]
+    - title: Features
+      labels: [feature]
+    - title: Fixes
+      labels: [bug]
+    - title: Compatibility
+      labels: [upstream]
+    - title: Docs
+      labels: [docs]
+    - title: Maintenance
+      labels: [chore, ci]
+    - title: Other
+      labels: ["*"]

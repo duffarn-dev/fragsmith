@@ -1,0 +1,32 @@
+name: pr-title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+    branches: [develop, main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The title is untrusted input: it only reaches the script through env.
+      - name: Check the title and set labels
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          PR: ${{ github.event.pull_request.number }}
+          CAN_WRITE: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$CAN_WRITE" = "true" ]; then
+            python3 tools/pr_title.py --apply "$PR"
+          else
+            # Forks and Dependabot get a read-only token: check only.
+            python3 tools/pr_title.py "$TITLE"
+          fi

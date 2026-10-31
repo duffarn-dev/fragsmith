@@ -1,0 +1,38 @@
+name: release
+
+# Every merge to main is a release: tag main with the version in
+# lib/version.py and publish a GitHub Release with generated notes.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Tag and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(grep -oP '^__version__ = "\K[^"]+' lib/version.py)
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            if [ "$(git rev-list -n1 "$tag")" != "$GITHUB_SHA" ]; then
+              echo "::warning::main changed since $tag, but lib/version.py still says $version. Bump it in the next release."
+            fi
+            echo "$tag already exists, nothing to publish."
+            exit 0
+          fi
+          gh release create "$tag" --target "$GITHUB_SHA" --title "Fragsmith $tag" --generate-notes
+          echo "Published $tag"

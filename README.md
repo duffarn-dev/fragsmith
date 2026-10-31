@@ -2,6 +2,7 @@
 
 **Turn a CS2 demo into a finished fragmovie. Automatically.**
 
+[![Latest release](https://img.shields.io/github/v/release/duffarn-dev/fragsmith)](https://github.com/duffarn-dev/fragsmith/releases/latest)
 [![tests](https://github.com/duffarn-dev/fragsmith/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/duffarn-dev/fragsmith/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
@@ -44,6 +45,8 @@ python -m venv .venv
 .venv\Scripts\python main.py setup
 .venv\Scripts\python main.py doctor
 ```
+
+`main` always holds the latest release, so a fresh clone is the current version. To update later: `git pull`, then `pip install -r requirements.txt` again. What changed in each version is on the [Releases](https://github.com/duffarn-dev/fragsmith/releases) page.
 
 `setup` asks for your SteamID64, your music folder and which PC renders, then writes `config.toml`. `doctor` checks that everything is installed and tells you what's missing. You can also copy `config.example.toml` to `config.toml` and edit it by hand.
 

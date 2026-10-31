@@ -23,6 +23,7 @@ sys.path.insert(0, str(PROJECT_DIR))
 
 from lib.hype_score import build_candidates  # noqa: E402
 from lib.parse_demo import DemoParseError, parse_demo  # noqa: E402
+from lib.version import __version__  # noqa: E402
 
 
 def load_dotenv() -> None:
@@ -763,6 +764,7 @@ def main() -> int:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    ap.add_argument("--version", action="version", version=f"fragsmith {__version__}")
     sub = ap.add_subparsers(dest="command", required=True)
 
     setup_p = sub.add_parser("setup", help="Answer a few questions and write config.toml")
