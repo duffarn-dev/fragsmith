@@ -34,7 +34,7 @@ body:
         - steps 6–7 – editing / the finished film
         - something else
     validations:
-      required: true
+      required: false  # optional: GitHub then shows "None" instead of preselecting the first option
   - type: dropdown
     id: render_mode
     attributes:
@@ -46,7 +46,7 @@ body:
         - folder (two PCs, shared folder or USB)
         - didn't get to rendering
     validations:
-      required: true
+      required: false  # optional: GitHub then shows "None" instead of preselecting the first option
   - type: textarea
     id: what
     attributes:
