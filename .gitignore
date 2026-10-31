@@ -6,6 +6,6 @@ __pycache__/
 .venv/
 .claude/settings.local.json
 
-# Personlige filer
+# Personal files (Steam IDs, paths, processed demos)
 config.toml
 processed.json
