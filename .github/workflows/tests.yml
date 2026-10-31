@@ -58,3 +58,15 @@ jobs:
     steps:
       - name: All suites passed
         run: test "${{ needs.suite.result }}" = "success"
+      # Pull requests show their red check themselves; pushes and the Monday run don't.
+      - uses: actions/checkout@v7
+        if: failure() && github.event_name != 'pull_request'
+      - name: Tell the maintainer on Discord
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          COMMIT_TITLE: ${{ github.event.head_commit.message }}
+          BRANCH: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 tools/notify.py failed tests "$BRANCH" "$EVENT" "$RUN_URL"

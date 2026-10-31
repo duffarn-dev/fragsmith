@@ -38,6 +38,7 @@ python tests/test_render_modes.py
 python tests/test_privacy_check.py
 python tests/test_release.py
 python tests/test_upstream_watch.py
+python tests/test_notify.py
 ```
 
 They need ffmpeg on your PATH. GitHub runs them on every pull request as well. See [tests/README.md](tests/README.md) for patterns worth reusing, such as mock clips at 720p30 instead of 1080p60.

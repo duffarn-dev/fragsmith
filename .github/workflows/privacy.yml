@@ -32,3 +32,12 @@ jobs:
           else
             python3 tools/privacy_check.py --tree
           fi
+      - name: Tell the maintainer on Discord
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          COMMIT_TITLE: ${{ github.event.head_commit.message }}
+          BRANCH: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 tools/notify.py failed privacy "$BRANCH" "$EVENT" "$RUN_URL"

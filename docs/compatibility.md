@@ -19,7 +19,7 @@ Every day at 05:00 UTC, the `upstream-watch` workflow (`tools/upstream_watch.py`
 | CS Demo Manager | the latest GitHub release of `akiver/cs-demo-manager` |
 | demoparser2 | PyPI |
 
-For every version newer than the tested one, it opens an issue titled `Upstream: <tool> <version>`, labeled `upstream`, with a checklist. It never opens the same title twice, even if the first one was closed. When a tool moves on again before anyone got to it, the older open issue is closed as superseded, so there's at most one open issue per tool. Once an issue's version is in `tested-versions.json` on `main` (tested and released), the watcher closes it as completed. Pre-releases are ignored.
+For every version newer than the tested one, it opens an issue titled `Upstream: <tool> <version>`, labeled `upstream`, with a checklist, and the maintainer gets a Discord message linking to it. It never opens the same title twice, even if the first one was closed. When a tool moves on again before anyone got to it, the older open issue is closed as superseded, so there's at most one open issue per tool. Once an issue's version is in `tested-versions.json` on `main` (tested and released), the watcher closes it as completed. Pre-releases are ignored.
 
 Run it by hand:
 

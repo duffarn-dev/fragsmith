@@ -30,6 +30,7 @@ jobs:
       - name: Check for new upstream versions
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           if [ "$DRY_RUN" = "true" ]; then
@@ -37,3 +38,11 @@ jobs:
           else
             python3 tools/upstream_watch.py
           fi
+      - name: Tell the maintainer on Discord
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          BRANCH: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 tools/notify.py failed upstream-watch "$BRANCH" "$EVENT" "$RUN_URL"
