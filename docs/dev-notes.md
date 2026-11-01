@@ -40,6 +40,8 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - `rgbashift` forces YUV→RGB→YUV on the **whole** stream (format negotiation ignores `enable`) and loses color everywhere. Use `chromashift` (native yuv420p) for channel-shift effects.
 - In `drawbox` expressions, `t` means **thickness**, not time. Time-animated position needs `overlay` with `t` in the x/y expressions.
 - Verify animations with `signalstats`/YAVG per frame, not by looking at a single frame.
+- The output size comes from a `Frame` (`lib/edit_engine.py`: `LANDSCAPE` 1920x1080 fit+pad, `PORTRAIT` 1080x1920 center crop) passed through the engine, cards and cold open. Don't write a size into a filter string; use `frame.size`, `frame.normalize()` or `frame.w`/`frame.h`.
+- How the frame refactor was proven to change nothing: run `finish` on the same run before and after, then diff the `cmd:` lines in `ffmpeg.log`. They were byte-identical. Use the same check for any refactor of filter-building code.
 - Overlaying an RGBA png (the logo) lets ffmpeg pick `gbrp` for the output, and libx264 then encodes RGB that players show purple and green. Force `format=yuv420p` after the overlay and keep `-pix_fmt yuv420p`.
 - A single-image overlay input (`-i logo.png`) stopped showing after the first part of a concat input. Loop it (`-loop 1 -i logo.png`) and end it with `overlay=...:shortest=1`.
 - Always loop it, even for one output frame: with an input seek that lands between two frames (19.056 s in a 120 fps clip), the first video frame has a pts above 0, the unlooped logo ends first, `shortest=1` ends the graph, and ffmpeg **exits 0 without writing the file**. Tests that seek onto an exact frame don't catch it. Check that the output exists.
