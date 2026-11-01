@@ -84,7 +84,8 @@ score wins. `--player <steamid64>` overrides.
   (`tools/upstream_watch.py`) and what to do when an update breaks things.
 
 ## CLI
-`run <demo>` (steps 0-3, phase stop) · `render <run-dir>` (step 4: queue the
+`run <demo>` (steps 0-3, phase stop; `--style` picks a preset from
+`lib/styles.py`, stored in the plan so render/finish use the same one) · `render <run-dir>` (step 4: queue the
 job — THIS is the approval) · `finish <run-dir>` (steps 5-7, fetches clips
 from the outbox itself) · `batch <folder>` · `cleanup <run-dir>` · `selftest` (`lib/selftest.py`: two
 clips end to end through the real `cmd_render`/`cmd_finish`, version check,

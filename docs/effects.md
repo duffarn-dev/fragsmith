@@ -6,6 +6,27 @@ All effects are toggled in `config.toml`. Most of them scale with the global `[e
 
 The AI Director (step 3) can *choose* where the big moves go (climax clip, replay, letterbox, which kills get a punch), but it never sets numeric parameters. Those always come from your config. The rule-based Director (used without an API key) never overrides effects, so you get the default rules described below.
 
+## Style presets
+
+Instead of setting every switch below, pick a style:
+
+```toml
+[style]
+preset = "hype"   # custom | clean | hype | cinematic
+```
+
+| Style | Looks like |
+|---|---|
+| `custom` | Your `[effects]` and `[editing]`, exactly as written. The default |
+| `clean` | Grade, vignette and beat cuts. No zooms, flashes, counters, replay or sound effects, and a lower intensity |
+| `hype` | Everything on and stronger: beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, counter, impact split, freeze, replay, louder sound effects |
+| `cinematic` | Letterbox, film grain, slow-mo push-ins, a gentle kill zoom, a long freeze and the replay. Nothing that shakes or flashes |
+
+- **Only some switches are set.** A preset sets only the switches it names (the full list is in `lib/styles.py`). Everything else keeps your value. That includes `enabled` (still the master switch), your `lut`, and the quality settings `eased_ramps` and `smooth_slowmo`.
+- **For one film:** `python main.py run <demo> --style cinematic` (also `batch --style`).
+- **The style is fixed when the edit plan is made.** It's stored in `02-edit-plan.json`, and `render` and `finish` use it, because the style decides which clips are rendered at 120 fps and whether the replay angle is rendered. `report.md` names it.
+- **Trying another style on clips you've already rendered:** change `"style"` in `02-edit-plan.json` and run `finish` again. Slow-mo on a clip that wasn't rendered at 120 fps falls back to interpolation. A replay that wasn't rendered uses your own POV instead of the victim's.
+
 ## Look
 
 | Effect | Config | What it does |
