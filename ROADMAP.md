@@ -1,6 +1,6 @@
 # Roadmap
 
-What's coming in Fragsmith. It's a hobby project, so there are **no dates**: a feature ships in the first Friday release after it's done. Each item links to its issue, where the details and progress live.
+What's coming in Fragsmith. It's a hobby project, so there are **no dates**: a feature ships in the first Friday release after it's done. Each item links to its issue, where the details and progress live. The [project board](https://github.com/users/duffarn-dev/projects/1) shows what's being worked on right now.
 
 Have an idea? Open a [feature idea](https://github.com/duffarn-dev/fragsmith/issues/new?template=feature.yml). What has already shipped is in the [release notes](https://github.com/duffarn-dev/fragsmith/releases).
 
