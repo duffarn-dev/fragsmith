@@ -27,6 +27,7 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 ## Render worker
 
 - Microsoft Store Python shows up as `python3.12.exe` in the process list, so `taskkill /IM python.exe` misses it.
+- A job that failed used to stay in `working/`, and the worker re-queues `working/` on start (meant for crashes). Restarting the worker therefore re-rendered a job that had failed (seen in the M7 selftest: it failed because the CS Demo Manager app was open, then rendered after the restart). Failed jobs now go to `failed/`.
 - A running worker doesn't load new code. Restart it after changing `worker.py` and check `worker.log` for a "worker started" line with the right timestamp.
 
 ## ffmpeg filter graphs

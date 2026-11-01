@@ -12,6 +12,10 @@ Picks up jobs from <job_dir>/inbox/ and, per job:
   2. csdm video --config-file  (HLAE + FFmpeg; ALL clips in one CS2 launch)
   3. Renames the output files to <clip_id>.mp4 in <job_dir>/outbox/<run_id>/
 
+A job that fails goes to <job_dir>/failed/ with its result in outbox/. Jobs
+left in working/ (the worker crashed or was closed mid-render) are re-queued
+when the worker starts.
+
 IMPORTANT:
 - The PC must be logged in with a desktop session — CS2 launches and is in
   use during rendering. Don't touch the machine while it runs.
@@ -410,6 +414,12 @@ def process_job(job_path: Path, job_dir: Path, csdm: Path) -> bool:
         result["error"] = str(exc)
         result["versions"] = detect_versions(csdm)
         log(f"ERROR in job {run_id}: {exc}", job_dir)
+        # Out of working/: that folder means "interrupted by a crash" and is
+        # re-queued on start, but this job failed and must not render again
+        # by itself (seen 2026-11-01: a restart re-rendered a failed job).
+        failed = job_dir / "failed"
+        failed.mkdir(exist_ok=True)
+        shutil.move(working, failed / working.name)
         return False
     finally:
         result_path.parent.mkdir(parents=True, exist_ok=True)

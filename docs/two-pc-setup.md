@@ -56,7 +56,7 @@ python worker.py --job-dir C:\fragsmith-jobs
 
 Add `--csdm "C:\...\csdm.exe"` if csdm lives somewhere unusual, or `--once` to process a single job and exit.
 
-The worker logs to the console and to `<job_dir>\worker.log`. A running worker doesn't pick up code changes: restart it after updating `worker.py`. After updating Fragsmith on the main PC, copy the new `worker.py` to the render PC too. `python main.py selftest` warns when the worker there is older (its results lack the version info).
+The worker logs to the console and to `<job_dir>\worker.log`. A job that fails is moved to `<job_dir>ailed\`, with its result (and the error) in `outbox\`. To retry it, move it back to `inbox\`. A running worker doesn't pick up code changes: restart it after updating `worker.py`. After updating Fragsmith on the main PC, copy the new `worker.py` to the render PC too. `python main.py selftest` warns when the worker there is older (its results lack the version info).
 
 ## End-to-end flow
 

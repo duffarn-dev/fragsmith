@@ -191,6 +191,9 @@ def test_queue_still_works(tmp: Path, csdm: Path) -> None:
     result = json.loads((job_dir / "outbox" / "q2.result.json").read_text(encoding="utf-8"))
     check("missing demo → False + error in result",
           not ok and "Demo file missing" in result.get("error", ""))
+    check("a failed job goes to failed/, not back to working/",
+          (job_dir / "failed" / "q2.json").exists() and not (job_dir / "working" / "q2.json").exists())
+    check("the result names the versions", "versions" in result and "cs2" in result["versions"])
 
 
 def test_setup(tmp: Path) -> None:
