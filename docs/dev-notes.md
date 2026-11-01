@@ -27,6 +27,7 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 ## Render worker
 
 - Microsoft Store Python shows up as `python3.12.exe` in the process list, so `taskkill /IM python.exe` misses it.
+- A job that failed used to stay in `working/`, and the worker re-queues `working/` on start (meant for crashes). Restarting the worker therefore re-rendered a job that had failed (seen in the M7 selftest: it failed because the CS Demo Manager app was open, then rendered after the restart). Failed jobs now go to `failed/`.
 - A running worker doesn't load new code. Restart it after changing `worker.py` and check `worker.log` for a "worker started" line with the right timestamp.
 
 ## ffmpeg filter graphs
@@ -71,6 +72,13 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - With private vulnerability reporting on, GitHub adds its own "Report a security vulnerability" entry to the issue chooser. Don't add a contact link for it as well.
 - A PR whose merge commit was rewritten afterwards (force push) disappears from generated release notes: GitHub can't link it to the history anymore. v0.1.0 lists PR #1 by hand for that reason. Changes to them on `develop` show up on GitHub after the next release to `main`.
 - Commits that GitHub creates (the squash and merge buttons, `gh pr merge`) take the author name and email from the GitHub **account**, not from the local `git config`. Turn on "Keep my email addresses private" (github.com/settings/emails) before the first merge, or the account's primary email lands in public history. It happened here once: the squash commit had to be rewritten, and the old commit stays reachable through the PR until GitHub Support removes it.
+
+## Selftest and versions
+
+- A CS2 demo's header (`demoparser2` `parse_header()`) says which game version recorded it: `patch_version` is steam.inf's `PatchVersion` without dots (1.41.9.4 → `14194`), and `game_directory` contains `csgo_v<ClientVersion>`. So "is this demo fresh?" can be checked exactly, before rendering, instead of guessing from the file date (which is the download date, not the match date).
+- HLAE's and CS Demo Manager's versions are the Windows file versions of `%USERPROFILE%\.csdm\hlae\HLAE.exe` and `cs-demo-manager.exe` (next to `csdm.cmd`). `worker.file_version` reads them with `ctypes` (version.dll), so the worker stays standard-library only. They're four-part (`2.192.10.0`); the selftest compares the first three, as the GitHub tags have them.
+- The worker puts those versions in every render result, so the main PC learns what the render PC runs without an extra SSH call. A worker copied before that change returns results without `versions`, which the selftest reports as "the worker is older than this Fragsmith".
+- `selftest` takes `cmd_render` and `cmd_finish` as arguments from `main.py` instead of importing them (that would be circular). It tests the real commands, not a copy.
 
 ## Upstream watcher
 

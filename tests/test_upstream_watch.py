@@ -91,7 +91,8 @@ def test_plan() -> None:
     body = actions[0]["body"]
     check("body has tested and new version", "| Last tested with Fragsmith | 2.192.10 |" in body
           and "**2.193.0**" in body)
-    check("body says what to change", '"hlae": "2.193.0"' in body and "compat/tested-versions.json" in body)
+    check("body says how to test and record", "python main.py selftest" in body and "--write-tested" in body
+          and "compat/tested-versions.json" in body)
     check("body links the release notes", "https://example.com/hlae" in body)
 
     existing = [{"number": 7, "title": "Upstream: HLAE 2.193.0", "state": "closed"}]

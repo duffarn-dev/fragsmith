@@ -48,7 +48,7 @@ python -m venv .venv
 
 `main` always holds the latest release, so a fresh clone is the current version. To update later: `git pull`, then `pip install -r requirements.txt` again. What changed in each version is on the [Releases](https://github.com/duffarn-dev/fragsmith/releases) page.
 
-`setup` asks for your SteamID64, your music folder and which PC renders, then writes `config.toml`. `doctor` checks that everything is installed and tells you what's missing. You can also copy `config.example.toml` to `config.toml` and edit it by hand.
+`setup` asks for your SteamID64, your music folder and which PC renders, then writes `config.toml`. `doctor` checks that everything is installed and tells you what's missing. Once it's happy, `python main.py selftest` renders and edits two short clips from a fresh demo, to prove the whole chain works (see [docs/compatibility.md](docs/compatibility.md#the-selftest)). You can also copy `config.example.toml` to `config.toml` and edit it by hand.
 
 ### One PC or two?
 

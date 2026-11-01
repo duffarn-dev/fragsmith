@@ -86,6 +86,8 @@ score wins. `--player <steamid64>` overrides.
 ## CLI
 `run <demo>` (steps 0-3, phase stop) · `render <run-dir>` (step 4: queue the
 job — THIS is the approval) · `finish <run-dir>` (steps 5-7, fetches clips
-from the outbox itself) · `batch <folder>` · `cleanup <run-dir>`.
+from the outbox itself) · `batch <folder>` · `cleanup <run-dir>` · `selftest` (`lib/selftest.py`: two
+clips end to end through the real `cmd_render`/`cmd_finish`, version check,
+`--write-tested`).
 
 Tests: `python tests/test_*.py` (no pytest). See `tests/README.md`.

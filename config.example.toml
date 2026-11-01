@@ -51,6 +51,12 @@ highfps_framerate = 120
 # clip (ace/clutch/AWP) and has no flag of its own here.
 true_view = true
 
+[selftest]
+# `python main.py selftest` uses the newest .dem/.dem.bz2 in this folder
+# (subfolders included). It must be FRESH: recorded with the CS2 version the
+# render PC runs. Leave empty to pass --demo every time.
+demo_dir = ""
+
 [director]
 # Who makes the edit plan in step 3:
 #   "auto"   = Claude if ANTHROPIC_API_KEY is set, otherwise the built-in rules
