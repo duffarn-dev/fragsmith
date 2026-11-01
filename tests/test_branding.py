@@ -20,6 +20,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from lib.assemble import _stats_card, _text_card, concat_timeline  # noqa: E402
 from lib.branding import branding_files, logo_overlay  # noqa: E402
+from lib.edit_engine import Frame  # noqa: E402
 
 FAILS: list[str] = []
 
@@ -154,7 +155,8 @@ def test_logo_in_concat(tmp: Path) -> None:
     work.mkdir()
     branded = concat_timeline(
         parts, work, log, logo,
-        {"logo_size": 0.2, "logo_opacity": 1.0, "logo_position": "bottom-right"}, frame_w=640,
+        {"logo_size": 0.2, "logo_opacity": 1.0, "logo_position": "bottom-right"},
+        frame=Frame(640, 360),
     )
     info = probe(branded)
     check("with a logo: same length, audio kept, yuv420p",

@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from lib.branding import branding_files, card_background_filter, logo_overlay
-from lib.edit_engine import ENCODE_ARGS
+from lib.edit_engine import ENCODE_ARGS, LANDSCAPE, Frame
 from lib.ffmpeg_util import (
     FONT_FILE,
     drawtext_escape,
@@ -21,23 +21,25 @@ from lib.models import EditPlan
 from lib.version import __version__
 
 
-def _card_source(seconds: float, background: Path | None) -> tuple[list[str], str]:
+def _card_source(
+    seconds: float, background: Path | None, frame: Frame = LANDSCAPE
+) -> tuple[list[str], str]:
     """The video input of a card and the start of its filter chain: black,
     or your [branding] image filling the frame."""
     if background is None:
-        return ["-f", "lavfi", "-i", f"color=c=black:s=1920x1080:r=60:d={seconds}"], ""
+        return ["-f", "lavfi", "-i", f"color=c=black:s={frame.size}:r=60:d={seconds}"], ""
     return (
         ["-loop", "1", "-framerate", "60", "-t", f"{seconds}", "-i", str(background)],
-        card_background_filter(1920, 1080) + ",",
+        card_background_filter(frame.w, frame.h) + ",",
     )
 
 
 def _text_card(
     text: str, seconds: float, out_path: Path, log_path: Path, label: str,
-    background: Path | None = None,
+    background: Path | None = None, frame: Frame = LANDSCAPE,
 ) -> None:
     escaped = drawtext_escape(text or " ")
-    video_in, prefix = _card_source(seconds, background)
+    video_in, prefix = _card_source(seconds, background, frame)
     run_ffmpeg(
         [
             *video_in,
@@ -148,6 +150,7 @@ def _stats_card(
     out_path: Path,
     log_path: Path,
     background: Path | None = None,
+    frame: Frame = LANDSCAPE,
 ) -> None:
     """Outro with stats instead of just text. Same fade as _text_card."""
     line1 = " — ".join(x for x in (player_name, stats["map"]) if x)
@@ -169,7 +172,7 @@ def _stats_card(
         for txt, size, ypos in rows
         if txt.strip()
     )
-    video_in, prefix = _card_source(seconds, background)
+    video_in, prefix = _card_source(seconds, background, frame)
     run_ffmpeg(
         [
             *video_in,
@@ -194,6 +197,7 @@ def build_intro_hook(
     work: Path,
     cfg: dict,
     log_path: Path,
+    frame: Frame = LANDSCAPE,
 ) -> list[Path]:
     """Cold open: up to 3 micro glimpses (0.25 s) of the top kills, cut
     straight from the raw clips around the KillMark offsets, placed before
@@ -229,12 +233,7 @@ def build_intro_hook(
             [
                 "-ss", f"{max(0.0, offset - 0.15):.3f}", "-i", str(clip),
                 "-t", "0.25",
-                "-vf",
-                (
-                    "scale=1920:1080:force_original_aspect_ratio=decrease,"
-                    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,"
-                    "fade=t=in:st=0:d=0.05:color=white"
-                ),
+                "-vf", f"{frame.normalize()},fade=t=in:st=0:d=0.05:color=white",
                 "-af", "asetpts=PTS-STARTPTS",
                 *ENCODE_ARGS,
                 str(out),
@@ -252,7 +251,7 @@ def concat_timeline(
     log_path: Path,
     logo: Path | None = None,
     branding: dict | None = None,
-    frame_w: int = 1920,
+    frame: Frame = LANDSCAPE,
 ) -> Path:
     """All parts in order -> work/timeline.mp4. Without a logo it's a stream
     copy; with one, the video is encoded once more with the logo on top
@@ -269,7 +268,7 @@ def concat_timeline(
         args = [
             "-f", "concat", "-safe", "0", "-i", str(concat_list),
             "-loop", "1", "-i", str(logo),
-            "-filter_complex", logo_overlay(branding or {}, frame_w),
+            "-filter_complex", logo_overlay(branding or {}, frame.w),
             "-map", "[v]", "-map", "0:a",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-pix_fmt", "yuv420p", "-r", "60", "-c:a", "copy",
@@ -296,6 +295,8 @@ def assemble(
     hook_files: list[Path] | None = None,
     intro_seconds: float | None = None,
     music_offset: float = 0.0,
+    frame: Frame = LANDSCAPE,
+    final_name: str = "final.mp4",
 ) -> Path:
     """hook_files: prebuilt cold open glimpses (from build_intro_hook);
     None = build them here (backward compatible). intro_seconds overrides
@@ -315,7 +316,7 @@ def assemble(
     outro = work / "99_outro.mp4"
     files, _ = branding_files(cfg)  # missing files are flagged by cmd_finish
     _text_card(plan.intro_text, intro_s, intro, log_path, "intro card",
-               files["intro_image"])
+               files["intro_image"], frame)
 
     # Stats outro when [editing].stats_outro is on and the data exists,
     # otherwise a plain text card (never a half-empty stats card)
@@ -331,23 +332,23 @@ def assemble(
     if stats:
         # a slightly longer card: three or four lines need reading time
         _stats_card(plan.outro_text, pov_name, stats,
-                    max(outro_s, 3.5), outro, log_path, files["outro_image"])
+                    max(outro_s, 3.5), outro, log_path, files["outro_image"], frame)
     else:
         _text_card(plan.outro_text, outro_s, outro, log_path, "outro card",
-                   files["outro_image"])
+                   files["outro_image"], frame)
 
     hook = (
         hook_files
         if hook_files is not None
-        else build_intro_hook(plan, candidates_by_id, clips_dir, work, cfg, log_path)
+        else build_intro_hook(plan, candidates_by_id, clips_dir, work, cfg, log_path, frame)
     )
     ordered = [*hook, intro, *segment_files, outro]
     timeline = concat_timeline(
-        ordered, work, log_path, files["logo"], cfg.get("branding", {})
+        ordered, work, log_path, files["logo"], cfg.get("branding", {}), frame
     )
 
     total = probe_duration(timeline)
-    final = run_dir / "final.mp4"
+    final = run_dir / final_name
 
     # SFX layer: whoosh into every clip change, impact on big kills (same
     # times as the impact split, from cut_log). Mixed below the music.
