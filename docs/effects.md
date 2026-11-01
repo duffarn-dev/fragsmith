@@ -90,6 +90,20 @@ Your own look on every film, set in `[branding]`. Paths are relative to the Frag
 
 The logo costs one extra encode of the film (about 12 s for a one-minute film). Without a logo, nothing changes.
 
+## Vertical 9:16 (Shorts, TikTok)
+
+`python main.py finish runs/<id> --vertical` makes `final-vertical.mp4` (1080×1920) next to `final.mp4`. It's the same edit, from the same raw clips, with the same music and beat sync, and it needs no extra render.
+
+- **The picture** is the center of each clip. The crosshair is always in the middle of a POV clip, so the action stays in view. The 16:9 render is scaled up about 1.8× for this, so it's a little softer than the landscape film. That's fine on a phone. If it's too soft for you, render at 1440p (`[video] width = 2560`, `height = 1440`), which costs render time.
+- **Overlays are placed for a phone held upright.** Captions and buttons cover the bottom of a Short, and the app bar covers the top:
+  - the lower third sits at 78 % of the height
+  - REPLAY sits below the app bar
+  - the logo always goes to the top (left or right, as in `logo_position`), at the same pixel width as in the landscape film
+- **No letterbox:** bars make no sense in 9:16, so `letterbox_on_slowmo` is off for this film.
+- **No killfeed:** the killfeed sits in the top right of the render and falls outside the crop. The kill counter and the overlay text carry the kills.
+- **Time:** the vertical film is a second editing pass, so `finish` takes about twice as long. Nothing extra renders in CS2.
+- **Length:** YouTube Shorts take up to 3 minutes and TikTok up to 10, so a normal Fragsmith film fits.
+
 ## Audio
 
 | Effect | Config | What it does |

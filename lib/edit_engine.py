@@ -46,6 +46,12 @@ class Frame(NamedTuple):
     def size(self) -> str:
         return f"{self.w}x{self.h}"
 
+    @property
+    def portrait(self) -> bool:
+        """Shorts/TikTok: captions and buttons cover the bottom ~20% and the
+        app bar the top ~8%, so overlays keep out of those bands."""
+        return self.h > self.w
+
     def normalize(self) -> str:
         """Filters that bring any source into this frame (fps not included)."""
         if self.cover:
@@ -491,8 +497,12 @@ def _build_filter(
             )
     if lowerthird:
         # Subtle context line (map · round · 1vX) in the bottom left, short
-        # fade in/out. Raised above the bottom bar when letterbox is active.
-        y = frame.h - (210 if letterbox else 70)
+        # fade in/out. Raised above the bottom bar when letterbox is active,
+        # and above the captions/buttons band in portrait.
+        if frame.portrait:
+            y = round(frame.h * 0.78)
+        else:
+            y = frame.h - (210 if letterbox else 70)
         vf.append(
             f"drawtext=fontfile='{FONT_FILE}'"
             f":text='{drawtext_escape(lowerthird)}':expansion=none"
@@ -608,11 +618,13 @@ def _build_replay_segment(
     vf = _effects_filters(effects, None, frame)
     if vf:
         replay_v += "," + ",".join(vf)
-    # REPLAY badge: top center (the killfeed lives in the top right), pulsing
+    # REPLAY badge: top center (the killfeed lives in the top right), pulsing;
+    # in portrait below the app bar
+    badge_y = round(frame.h * 0.12) if frame.portrait else 70
     replay_v += (
         f",drawtext=fontfile='{FONT_FILE}':text='REPLAY':expansion=none"
         f":fontsize=72:fontcolor=white:borderw=5:bordercolor=black"
-        f":x=(w-text_w)/2:y=70:alpha='0.6+0.4*abs(sin(t*3))'"
+        f":x=(w-text_w)/2:y={badge_y}:alpha='0.6+0.4*abs(sin(t*3))'"
     )
 
     chains = [

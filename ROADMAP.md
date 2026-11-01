@@ -6,14 +6,13 @@ Have an idea? Open a [feature idea](https://github.com/duffarn-dev/fragsmith/iss
 
 ## Now
 
-Being built for the next releases.
-
-- **Vertical 9:16:** a Shorts/TikTok version of every film from the same clips ([#21](https://github.com/duffarn-dev/fragsmith/issues/21)), after the frame-size groundwork ([#20](https://github.com/duffarn-dev/fragsmith/issues/20))
+Nothing is being built right now. Style presets, branding, the thumbnail and the vertical 9:16 film are done and ship in the next release. The next items are picked from the list below.
 
 ## Next
 
 Likely after that. Not decided, and the order can change.
 
+- A killfeed panel in the vertical film (the killfeed falls outside the 9:16 crop today)
 - A "best of the week" film from several demos
 - A fast low-resolution preview before the full render
 - Cleaning up raw clips on the render PC in the two-PC setup

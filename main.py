@@ -665,6 +665,42 @@ def cmd_finish(args: argparse.Namespace) -> int:
             f"with: python main.py finish {args.run_dir} --music <file>"
         )
 
+    vertical = None
+    if getattr(args, "vertical", False):
+        import time
+
+        from lib.edit_engine import PORTRAIT
+
+        # The same edit in a 9:16 frame from the same raw clips: the timing
+        # doesn't depend on the frame, so beat and drop sync carry over. The
+        # letterbox bar makes no sense in 9:16.
+        print("Vertical 9:16: editing again in portrait ...")
+        t0 = time.monotonic()
+        vdir = run_dir / "04-segments-vertical"
+        vdir.mkdir(parents=True, exist_ok=True)
+        vcfg = {**cfg, "effects": {**cfg.get("effects", {}), "letterbox_on_slowmo": False}}
+        try:
+            vhooks = build_intro_hook(
+                plan, candidates_by_id, clips_dir, vdir, vcfg, log_path, frame=PORTRAIT
+            )
+            vsegs, vcut_log, vflags = build_segments(
+                plan, candidates_by_id, clips_dir, vdir, beats_used, vcfg, log_path,
+                context={"map": events.get("map", "")},
+                timeline_start=hook_s + intro_s, frame=PORTRAIT,
+            )
+            vertical = assemble(
+                plan, vsegs, music_path, run_dir, vcfg, log_path,
+                candidates_by_id=candidates_by_id, clips_dir=clips_dir,
+                events=events, cut_log=vcut_log, hook_files=vhooks,
+                intro_seconds=intro_s, music_offset=music_offset,
+                frame=PORTRAIT, final_name="final-vertical.mp4", work_dir=vdir,
+            )
+        except FfmpegError as exc:  # the landscape film is done either way
+            flags.append(f"No vertical film: {str(exc).splitlines()[0]}")
+        else:
+            flags.extend(f for f in vflags if f not in flags)
+            print(f"    {vertical.name} in {time.monotonic() - t0:.0f} s")
+
     thumbnail = None
     if editing.get("thumbnail", True):
         from lib.thumbnail import make_thumbnail
@@ -679,7 +715,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
 
     report = write_report(
         plan, candidates_by_id, cut_log, flags, beats_used, final, run_dir,
-        events=events, thumbnail=thumbnail,
+        events=events, thumbnail=thumbnail, vertical=vertical,
     )
 
     if flags:
@@ -691,6 +727,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
     print(f"Report: {report}")
     if thumbnail:
         print(f"Thumbnail: {thumbnail}")
+    if vertical:
+        print(f"Vertical: {vertical}")
     print(f"Raw clips are kept until you've watched the film — "
           f"delete them with: python main.py cleanup {args.run_dir}")
     return 0
@@ -764,7 +802,7 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
         )
         return 1
     freed = 0
-    for sub in ("03-raw-clips", "04-segments"):
+    for sub in ("03-raw-clips", "04-segments", "04-segments-vertical"):
         target = run_dir / sub
         if target.is_dir():
             freed += sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
@@ -857,6 +895,10 @@ def main() -> int:
     fin_p.add_argument("run_dir", help="Path to runs/<id>/ from 'run'")
     fin_p.add_argument("--clips", help="Raw clip folder (default: <run-dir>/03-raw-clips)")
     fin_p.add_argument("--music", help="Override the music choice (file name in the music folder)")
+    fin_p.add_argument(
+        "--vertical", action="store_true",
+        help="Also make final-vertical.mp4 (9:16, for Shorts/TikTok) from the same clips",
+    )
     fin_p.set_defaults(func=cmd_finish)
 
     batch_p = sub.add_parser("batch", help="Process every demo in a folder (steps 0-3)")
