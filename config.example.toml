@@ -128,6 +128,17 @@ sfx = true                     # whoosh into clip changes + impact on big kills
 sfx_volume = 0.35              # SFX level in the mix (impact gets ×1.3)
 sfx_dir = "assets/sfx"         # your own .wav files here override; if missing, they're synthesized
 
+[branding]
+# Your own look. Paths are relative to the Fragsmith folder unless absolute.
+# A missing file is left out (with a warning), never a stop.
+intro_image = ""      # png/jpg behind the intro card; any aspect, it fills the frame
+outro_image = ""      # png/jpg behind the outro/stats card
+logo = ""             # png with transparency, shown in a corner of the whole film
+logo_position = "bottom-right"   # top-left | top-right | bottom-left | bottom-right
+                                 # (top-right covers the killfeed)
+logo_size = 0.12      # logo width as a share of the frame width
+logo_opacity = 0.8    # 0.0-1.0
+
 [clips]
 pre_kill_seconds = 5.0    # lead-in before the first kill in a clip
 post_kill_seconds = 3.0   # tail after the last kill

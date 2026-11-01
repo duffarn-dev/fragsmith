@@ -77,6 +77,18 @@ preset = "hype"   # custom | clean | hype | cinematic
 | Drop sync | `[editing].drop_sync` | Places the climax clip on the music's bass drop. Tracks without a clear drop fall back to climax-at-the-end |
 | Stats outro | `[editing].stats_outro` | Outro card with kills, K/D, HS% and best clutch instead of plain text |
 
+## Branding
+
+Your own look on every film, set in `[branding]`. Paths are relative to the Fragsmith folder unless absolute. A file that's missing is left out with a flag in `report.md`, and `doctor` warns about it.
+
+| Option | Config | What it does |
+|---|---|---|
+| Intro image | `[branding].intro_image` | A png/jpg behind the intro card. Any aspect: it's scaled to fill the frame, the center is kept, and it's darkened a little so the title stays readable |
+| Outro image | `[branding].outro_image` | The same, behind the outro or stats card |
+| Logo | `[branding].logo`, `logo_position`, `logo_size`, `logo_opacity` | A png (use transparency) in a corner of the whole film: cold open, cards, clips and replay. `logo_size` is its width as a share of the frame (0.12 = 12 %). `bottom-right` is the default; `top-right` covers the killfeed |
+
+The logo costs one extra encode of the film (about 12 s for a one-minute film). Without a logo, nothing changes.
+
 ## Audio
 
 | Effect | Config | What it does |

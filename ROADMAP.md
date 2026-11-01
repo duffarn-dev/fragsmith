@@ -8,7 +8,6 @@ Have an idea? Open a [feature idea](https://github.com/duffarn-dev/fragsmith/iss
 
 Being built for the next releases.
 
-- **Branding:** your own images behind the intro and outro, and your logo on the film ([#18](https://github.com/duffarn-dev/fragsmith/issues/18))
 - **Thumbnail:** a 1280×720 `thumbnail.jpg` from the climax kill, ready for YouTube ([#19](https://github.com/duffarn-dev/fragsmith/issues/19))
 - **Vertical 9:16:** a Shorts/TikTok version of every film from the same clips ([#21](https://github.com/duffarn-dev/fragsmith/issues/21)), after the frame-size groundwork ([#20](https://github.com/duffarn-dev/fragsmith/issues/20))
 
