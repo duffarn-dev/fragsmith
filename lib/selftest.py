@@ -201,11 +201,11 @@ def check_clip(r: Report, path: Path, want_fps: int | None, want_height: int) ->
 
 def wait_for_render(mode: str, run_id: str, cfg: dict, raw_dir: Path, timeout_min: float) -> dict:
     """Two-PC modes: poll until the worker has written its result."""
-    from lib.render_clips import collect_clips, collect_clips_ssh
+    from lib.render_clips import collect_clips, collect_clips_ssh, job_waiting
 
     render_cfg = cfg.get("render", {})
     start = time.monotonic()
-    hinted = False
+    last_minute, hinted = -1, False
     while True:
         if mode == "ssh":
             _, result = collect_clips_ssh(run_id, render_cfg, raw_dir)
@@ -216,11 +216,16 @@ def wait_for_render(mode: str, run_id: str, cfg: dict, raw_dir: Path, timeout_mi
         waited = (time.monotonic() - start) / 60
         if waited > timeout_min:
             return {"status": "timeout", "error": f"no result from the render PC after {timeout_min:g} min"}
-        if waited > 3 and not hinted:
-            print("    Still waiting. Is the worker running on the render PC? "
-                  "(python worker.py --job-dir <job folder>)")
-            hinted = True
-        print(f"    waiting for the render PC ... {waited:.0f} min", flush=True)
+        if int(waited) != last_minute:
+            last_minute = int(waited)
+            # Still in the inbox after a minute means no worker picked it up;
+            # once it's taken, the worker is busy rendering, which takes minutes.
+            if waited >= 1 and not hinted and job_waiting(run_id, render_cfg):
+                print("    The job is still in the render PC's inbox: is the worker running there? "
+                      "(python worker.py --job-dir <job folder>)")
+                hinted = True
+            else:
+                print(f"    waiting for the render PC ... {last_minute} min", flush=True)
         time.sleep(POLL_SECONDS)
 
 
@@ -283,7 +288,8 @@ def run_selftest(project_dir: Path, args: argparse.Namespace, cfg: dict,
             for sub in ("03-raw-clips", "04-segments"):
                 shutil.rmtree(run_dir / sub, ignore_errors=True)
         if run_dir:
-            print(f"The test film: {run_dir / 'final.mp4'}")
+            kept = "kept (--keep)" if args.keep else "deleted (--keep keeps them)"
+            print(f"The test film: {run_dir / 'final.mp4'} (raw clips {kept})")
         print("=" * 64)
         return 0
 

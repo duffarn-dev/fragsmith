@@ -88,6 +88,15 @@ def test_picking() -> None:
         check("--demo wins", st.pick_demo("x.dem", cfg) == Path("x.dem"))
         check("no folder configured", st.pick_demo(None, {}) is None)
 
+    from lib.render_clips import job_waiting
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = {"mode": "folder", "job_dir": tmp}
+        Path(tmp, "inbox").mkdir()
+        check("folder mode: job not in the inbox", job_waiting("run1", cfg) is False)
+        Path(tmp, "inbox", "run1.json").write_text("{}")
+        check("folder mode: job still waiting", job_waiting("run1", cfg) is True)
+
 
 def test_both_render_passes() -> None:
     print("both render passes run")

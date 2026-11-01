@@ -239,6 +239,24 @@ def submit_job_ssh(job: dict, demo_path: Path, render_cfg: dict) -> str:
     return f"{host}:{remote_dir}/inbox/{job_name}"
 
 
+def job_waiting(run_id: str, render_cfg: dict) -> bool | None:
+    """True while the job is still in the render PC's inbox, i.e. no worker
+    has picked it up. None when that can't be checked."""
+    if render_mode(render_cfg) == "folder":
+        job_dir = render_cfg.get("job_dir", "")
+        return (Path(job_dir) / "inbox" / f"{run_id}.json").exists() if job_dir else None
+    remote_win = render_cfg.get("remote_job_dir", "C:/fragsmith-jobs").replace("/", "\\")
+    try:
+        out = _run(
+            ["ssh", *_ssh_opts(render_cfg), render_cfg["ssh_host"],
+             f'if exist "{remote_win}\\inbox\\{run_id}.json" (echo YES) else (echo NO)'],
+            "checking the render PC's inbox",
+        )
+    except SshError:
+        return None
+    return "YES" in out
+
+
 def collect_clips_ssh(
     run_id: str, render_cfg: dict, target_dir: Path
 ) -> tuple[int, dict]:
