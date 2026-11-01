@@ -40,6 +40,9 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - `rgbashift` forces YUV→RGB→YUV on the **whole** stream (format negotiation ignores `enable`) and loses color everywhere. Use `chromashift` (native yuv420p) for channel-shift effects.
 - In `drawbox` expressions, `t` means **thickness**, not time. Time-animated position needs `overlay` with `t` in the x/y expressions.
 - Verify animations with `signalstats`/YAVG per frame, not by looking at a single frame.
+- Overlaying an RGBA png (the logo) lets ffmpeg pick `gbrp` for the output, and libx264 then encodes RGB that players show purple and green. Force `format=yuv420p` after the overlay and keep `-pix_fmt yuv420p`.
+- A single-image overlay input (`-i logo.png`) stopped showing after the first part of a concat input. Loop it (`-loop 1 -i logo.png`) and end it with `overlay=...:shortest=1`.
+- `drawbox=c=black@0.35:t=fill` darkens in YUV, so it also pulls colors toward gray (yellow got a blue cast in the test). Pure red or blue test images have so little luma that "darkened" looks black; test with bright or gray images.
 - Fine film grain doesn't survive the encode: libx264 at crf 18 smooths `noise=alls=3` (`grain` 0.25 at intensity 1.0) away, and a 1:1 crop looked the same as no grain. Check grain at 1:1 or by file size: noise costs bits, and 0.5 made the film ~7 % bigger.
 
 ## drawtext

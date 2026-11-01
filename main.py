@@ -621,6 +621,9 @@ def cmd_finish(args: argparse.Namespace) -> int:
         print("STOPPED: no segments could be built (are all raw clips missing?).")
         return 1
     print(f"    {len(segments)} segments built")
+    from lib.branding import branding_files
+
+    flags.extend(branding_files(cfg)[1])  # a missing image or logo is left out
 
     # Drop sync: measure the ACTUAL offset from the drop (encoding is frame-granular)
     if drop_info:

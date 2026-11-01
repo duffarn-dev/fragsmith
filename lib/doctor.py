@@ -133,6 +133,15 @@ def _check_config(r: Report, project_dir: Path) -> dict | None:
                 f"LUT file not found: {lut} (grading will run without it)",
                 "python tools/make_lut.py, or set [effects].lut = \"\".",
             )
+
+    from lib.branding import branding_files
+
+    files, missing = branding_files(cfg)
+    for warning in missing:
+        r.warn(warning, "Fix the path in [branding], or set it to \"\".")
+    used = [key for key, path in files.items() if path]
+    if used:
+        r.ok(f"Branding: {', '.join(used)}")
     return cfg
 
 

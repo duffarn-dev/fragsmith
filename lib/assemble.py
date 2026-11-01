@@ -9,6 +9,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from lib.branding import branding_files, card_background_filter, logo_overlay
 from lib.edit_engine import ENCODE_ARGS
 from lib.ffmpeg_util import (
     FONT_FILE,
@@ -20,18 +21,31 @@ from lib.models import EditPlan
 from lib.version import __version__
 
 
+def _card_source(seconds: float, background: Path | None) -> tuple[list[str], str]:
+    """The video input of a card and the start of its filter chain: black,
+    or your [branding] image filling the frame."""
+    if background is None:
+        return ["-f", "lavfi", "-i", f"color=c=black:s=1920x1080:r=60:d={seconds}"], ""
+    return (
+        ["-loop", "1", "-framerate", "60", "-t", f"{seconds}", "-i", str(background)],
+        card_background_filter(1920, 1080) + ",",
+    )
+
+
 def _text_card(
-    text: str, seconds: float, out_path: Path, log_path: Path, label: str
+    text: str, seconds: float, out_path: Path, log_path: Path, label: str,
+    background: Path | None = None,
 ) -> None:
     escaped = drawtext_escape(text or " ")
+    video_in, prefix = _card_source(seconds, background)
     run_ffmpeg(
         [
-            "-f", "lavfi", "-i", f"color=c=black:s=1920x1080:r=60:d={seconds}",
+            *video_in,
             "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
             "-t", str(seconds),
             "-vf",
             (
-                f"drawtext=fontfile='{FONT_FILE}':text='{escaped}':expansion=none"
+                f"{prefix}drawtext=fontfile='{FONT_FILE}':text='{escaped}':expansion=none"
                 f":fontsize=72:fontcolor=white:borderw=3:bordercolor=black"
                 f":x=(w-text_w)/2:y=(h-text_h)/2,fade=t=in:st=0:d=0.4,"
                 f"fade=t=out:st={seconds - 0.4}:d=0.4"
@@ -133,6 +147,7 @@ def _stats_card(
     seconds: float,
     out_path: Path,
     log_path: Path,
+    background: Path | None = None,
 ) -> None:
     """Outro with stats instead of just text. Same fade as _text_card."""
     line1 = " — ".join(x for x in (player_name, stats["map"]) if x)
@@ -154,13 +169,14 @@ def _stats_card(
         for txt, size, ypos in rows
         if txt.strip()
     )
+    video_in, prefix = _card_source(seconds, background)
     run_ffmpeg(
         [
-            "-f", "lavfi", "-i", f"color=c=black:s=1920x1080:r=60:d={seconds}",
+            *video_in,
             "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
             "-t", str(seconds),
             "-vf",
-            f"{draw},fade=t=in:st=0:d=0.4,fade=t=out:st={seconds - 0.4}:d=0.4",
+            f"{prefix}{draw},fade=t=in:st=0:d=0.4,fade=t=out:st={seconds - 0.4}:d=0.4",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-pix_fmt", "yuv420p", "-r", "60",
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
@@ -230,6 +246,42 @@ def build_intro_hook(
     return glimpses
 
 
+def concat_timeline(
+    parts: list[Path],
+    work: Path,
+    log_path: Path,
+    logo: Path | None = None,
+    branding: dict | None = None,
+    frame_w: int = 1920,
+) -> Path:
+    """All parts in order -> work/timeline.mp4. Without a logo it's a stream
+    copy; with one, the video is encoded once more with the logo on top
+    (same video settings as ENCODE_ARGS, audio copied)."""
+    concat_list = work / "concat.txt"
+    concat_list.write_text(
+        "".join(f"file '{p.resolve().as_posix()}'\n" for p in parts),
+        encoding="utf-8",
+    )
+    timeline = work / "timeline.mp4"
+    if logo is None:
+        args = ["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy"]
+    else:
+        args = [
+            "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            "-loop", "1", "-i", str(logo),
+            "-filter_complex", logo_overlay(branding or {}, frame_w),
+            "-map", "[v]", "-map", "0:a",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-r", "60", "-c:a", "copy",
+        ]
+    run_ffmpeg(
+        [*args, str(timeline)],
+        log_path,
+        "step 7: concatenating segments" + (" + logo" if logo else ""),
+    )
+    return timeline
+
+
 def assemble(
     plan: EditPlan,
     segment_files: list[Path],
@@ -261,7 +313,9 @@ def assemble(
     work = run_dir / "04-segments"
     intro = work / "00_intro.mp4"
     outro = work / "99_outro.mp4"
-    _text_card(plan.intro_text, intro_s, intro, log_path, "intro card")
+    files, _ = branding_files(cfg)  # missing files are flagged by cmd_finish
+    _text_card(plan.intro_text, intro_s, intro, log_path, "intro card",
+               files["intro_image"])
 
     # Stats outro when [editing].stats_outro is on and the data exists,
     # otherwise a plain text card (never a half-empty stats card)
@@ -277,9 +331,10 @@ def assemble(
     if stats:
         # a slightly longer card: three or four lines need reading time
         _stats_card(plan.outro_text, pov_name, stats,
-                    max(outro_s, 3.5), outro, log_path)
+                    max(outro_s, 3.5), outro, log_path, files["outro_image"])
     else:
-        _text_card(plan.outro_text, outro_s, outro, log_path, "outro card")
+        _text_card(plan.outro_text, outro_s, outro, log_path, "outro card",
+                   files["outro_image"])
 
     hook = (
         hook_files
@@ -287,17 +342,8 @@ def assemble(
         else build_intro_hook(plan, candidates_by_id, clips_dir, work, cfg, log_path)
     )
     ordered = [*hook, intro, *segment_files, outro]
-    concat_list = work / "concat.txt"
-    concat_list.write_text(
-        "".join(f"file '{p.resolve().as_posix()}'\n" for p in ordered),
-        encoding="utf-8",
-    )
-    timeline = work / "timeline.mp4"
-    run_ffmpeg(
-        ["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy",
-         str(timeline)],
-        log_path,
-        "step 7: concatenating segments",
+    timeline = concat_timeline(
+        ordered, work, log_path, files["logo"], cfg.get("branding", {})
     )
 
     total = probe_duration(timeline)
