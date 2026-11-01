@@ -18,7 +18,7 @@ Point Fragsmith at a `.dem` file. It finds your best rounds, renders them from y
 - **Picks the order like an editor would.** Strong opener, build-up, best clip last. Use the built-in rules for free, or let Claude direct the film.
 - **Cuts on the beat.** Every cut snaps to the music, and the climax lands on the track's bass drop.
 - **Real slow-mo.** Slow-motion clips are rendered at 120 fps, so they're smooth instead of stuttery.
-- **Effects that hit the kills.** Kill zoom, dutch tilt, headshot punch, freeze frame, kill counter, instant replay from the victim's POV, letterbox, color grade, film grain, whooshes and impacts with music ducking. All of them can be turned on or off: [docs/effects.md](docs/effects.md).
+- **Effects that hit the kills.** Kill zoom, dutch tilt, headshot punch, freeze frame, kill counter, instant replay from the victim's POV, letterbox, color grade, film grain, whooshes and impacts with music ducking. Pick a style (`clean`, `hype`, `cinematic`) or turn each one on or off yourself: [docs/effects.md](docs/effects.md).
 - **You stay in control.** Fragsmith stops after the edit plan and shows what it will render and how long it'll take. Nothing renders until you say so. Every film comes with a `report.md` explaining the choices.
 - **One PC or two.** Render on your own PC, or hand rendering to a second PC and keep using your main one.
 
@@ -82,7 +82,7 @@ python main.py batch <folder>        # steps 1–3 for every demo in a folder
 python main.py cleanup runs/<id>     # deletes raw clips and intermediate files
 ```
 
-Valve matchmaking demos (`.dem.bz2`) are extracted automatically. Use `--player <steamid64>` to make a film of someone else in the demo, and `finish --music <file>` to try a different track without rendering again.
+Valve matchmaking demos (`.dem.bz2`) are extracted automatically. Use `--player <steamid64>` to make a film of someone else in the demo, `run --style clean|hype|cinematic` to pick a [style preset](docs/effects.md#style-presets), and `finish --music <file>` to try a different track without rendering again.
 
 ## FAQ
 

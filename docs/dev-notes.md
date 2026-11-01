@@ -40,6 +40,7 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - `rgbashift` forces YUV→RGB→YUV on the **whole** stream (format negotiation ignores `enable`) and loses color everywhere. Use `chromashift` (native yuv420p) for channel-shift effects.
 - In `drawbox` expressions, `t` means **thickness**, not time. Time-animated position needs `overlay` with `t` in the x/y expressions.
 - Verify animations with `signalstats`/YAVG per frame, not by looking at a single frame.
+- Fine film grain doesn't survive the encode: libx264 at crf 18 smooths `noise=alls=3` (`grain` 0.25 at intensity 1.0) away, and a 1:1 crop looked the same as no grain. Check grain at 1:1 or by file size: noise costs bits, and 0.5 made the film ~7 % bigger.
 
 ## drawtext
 

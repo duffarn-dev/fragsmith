@@ -24,6 +24,7 @@ sys.path.insert(0, str(PROJECT_DIR))
 
 from lib.hype_score import build_candidates  # noqa: E402
 from lib.parse_demo import DemoParseError, parse_demo  # noqa: E402
+from lib.styles import STYLES, apply_style, resolve_style  # noqa: E402
 from lib.version import __version__  # noqa: E402
 
 
@@ -83,6 +84,12 @@ def _resolve_demo(path_arg: str) -> Path:
 def cmd_run(args: argparse.Namespace) -> int:
     read_learnings()
     cfg = load_config()
+    try:
+        style = resolve_style(cfg, getattr(args, "style", None))
+    except ValueError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    cfg = apply_style(cfg, style)
 
     demo = _resolve_demo(args.demo)
     run_id = f"{demo.stem}-{datetime.now():%Y%m%d-%H%M%S}"
@@ -219,6 +226,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             return 1
 
+    plan.style = style
     (run_dir / "02-edit-plan.json").write_text(
         plan.model_dump_json(indent=2), encoding="utf-8"
     )
@@ -262,6 +270,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     print("=" * 64)
     print("EDIT PLAN (phase stop — rendering requires your approval)")
     print(f"  Director: {director_label}")
+    print(f"  Style: {style}")
     print(f"  Music: {plan.music_track}")
     print(f"  Intro: {plan.intro_text}   Outro: {plan.outro_text}")
     print(f"  {'#':>2} {'clip':<22} {'score':>6} {'sec':>6}  overlay/slow-mo")
@@ -318,6 +327,11 @@ def cmd_render(args: argparse.Namespace) -> int:
     from lib.render_clips import build_render_job, submit_job
 
     plan = EditPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+    try:
+        cfg = apply_style(cfg, plan.style)  # the style the plan was made with
+    except ValueError as exc:
+        print(f"ERROR in {plan_path.name}: {exc}")
+        return 1
     cand_data = json.loads(
         (run_dir / "01-candidates.json").read_text(encoding="utf-8")
     )
@@ -456,6 +470,11 @@ def cmd_finish(args: argparse.Namespace) -> int:
     from lib.models import EditPlan, Highlight
 
     plan = EditPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+    try:
+        cfg = apply_style(cfg, plan.style)  # the same style the clips were rendered with
+    except ValueError as exc:
+        print(f"ERROR in {plan_path.name}: {exc}")
+        return 1
     if args.music:
         plan.music_track = args.music  # override the Director's music choice
     cand_data = json.loads(cand_path.read_text(encoding="utf-8"))
@@ -694,7 +713,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
         code = cmd_run(
             argparse.Namespace(
                 demo=str(path), player=args.player, music=None,
-                director=args.director,
+                director=args.director, style=args.style,
             )
         )
         processed[stem] = {
@@ -802,6 +821,10 @@ def main() -> int:
         "--director", choices=("auto", "rules", "claude"),
         help="Who makes the edit plan (overrides [director].mode)",
     )
+    run_p.add_argument(
+        "--style", choices=tuple(STYLES),
+        help="Effect style for this film (overrides [style].preset)",
+    )
     run_p.set_defaults(func=cmd_run)
 
     ren_p = sub.add_parser(
@@ -826,6 +849,10 @@ def main() -> int:
     batch_p.add_argument(
         "--director", choices=("auto", "rules", "claude"),
         help="Who makes the edit plans (overrides [director].mode)",
+    )
+    batch_p.add_argument(
+        "--style", choices=tuple(STYLES),
+        help="Effect style for every film (overrides [style].preset)",
     )
     batch_p.set_defaults(func=cmd_batch)
 

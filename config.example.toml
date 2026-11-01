@@ -67,6 +67,16 @@ mode = "auto"
 model = "claude-opus-4-8"
 max_retries = 3
 
+[style]
+# One word for a tuned set of effects:
+#   "custom"    = [effects] and [editing] below, exactly as written
+#   "clean"     = grade and beat cuts; no zooms, flashes, counters or sound effects
+#   "hype"      = everything on and stronger
+#   "cinematic" = letterbox, grain, slow pushes, long freezes, the instant replay
+# A preset overrides only the switches it names (docs/effects.md lists them).
+# python main.py run --style hype overrides this for one film.
+preset = "custom"
+
 [effects]
 enabled = true
 intensity = 1.2          # global strength 0.0-2.0 (scales everything below)

@@ -416,6 +416,7 @@ def write_report(
         "",
         f"**Generated:** {datetime.now():%Y-%m-%d %H:%M} by Fragsmith {__version__}",
         f"**Film:** {final_path.name} ({final_duration:.1f} s)",
+        f"**Style:** {plan.style}",
         f"**Music:** {plan.music_track} ({beats.get('bpm', '?')} BPM)",
     ]
     # the drop sync decision (put in the beats dict by cmd_finish)
