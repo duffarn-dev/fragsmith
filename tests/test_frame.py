@@ -104,6 +104,13 @@ def test_segments(tmp: Path) -> None:
     check("the frame doesn't change the timing",
           all(abs(a[2] - b[2]) < 0.02 for a, b in zip(land, port)),
           f"{[r[2] for r in land]} vs {[r[2] for r in port]}")
+    cmds = [l for l in log.read_text(encoding="utf-8").splitlines() if "cmd:" in l]
+    portrait_cmds = " ".join(l for l in cmds if "portrait" in l)
+    landscape_cmds = " ".join(l for l in cmds if "landscape" in l)
+    check("9:16 keeps the lower third above the captions band (78%)",
+          "x=70:y=1498" in portrait_cmds and "x=70:y=1010" in landscape_cmds)
+    check("9:16 puts REPLAY below the app bar",
+          "y=230:alpha" in portrait_cmds and "y=70:alpha" in landscape_cmds)
 
     card = tmp / "card.mp4"
     _text_card("TITLE", 1.0, card, log, "portrait card", frame=PORTRAIT)

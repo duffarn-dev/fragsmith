@@ -59,7 +59,8 @@ def card_background_filter(w: int, h: int) -> str:
 
 
 def logo_overlay(
-    branding: dict, frame_w: int, main: str = "[0:v]", logo: str = "[1:v]", out: str = "[v]"
+    branding: dict, frame_w: int, main: str = "[0:v]", logo: str = "[1:v]", out: str = "[v]",
+    frame_h: int | None = None,
 ) -> str:
     """filter_complex chain that puts the logo in a corner of `main`.
 
@@ -76,9 +77,17 @@ def logo_overlay(
     if pos not in POSITIONS:
         pos = "bottom-right"
     margin = round(frame_w * 0.025)
-    logo_w = max(2, round(frame_w * size / 2) * 2)
+    # a share of the long side: the same width in px in 16:9 and 9:16, so the
+    # logo isn't half as big on a phone held upright
+    long_side = max(frame_w, frame_h or 0)
+    logo_w = max(2, round(long_side * size / 2) * 2)
     x = str(margin) if pos.endswith("left") else f"W-w-{margin}"
-    y = str(margin) if pos.startswith("top") else f"H-h-{margin}"
+    if frame_h and frame_h > frame_w:
+        # 9:16: captions and buttons cover the bottom of a Short, so the logo
+        # goes to the top, below the app bar (there's no killfeed up there)
+        y = str(round(frame_h * 0.10))
+    else:
+        y = str(margin) if pos.startswith("top") else f"H-h-{margin}"
     return (
         f"{logo}scale={logo_w}:-1,format=rgba,colorchannelmixer=aa={opacity:.2f}[lg];"
         f"{main}[lg]overlay=x={x}:y={y}:format=auto:shortest=1,format=yuv420p{out}"

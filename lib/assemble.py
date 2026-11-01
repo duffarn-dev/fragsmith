@@ -268,7 +268,7 @@ def concat_timeline(
         args = [
             "-f", "concat", "-safe", "0", "-i", str(concat_list),
             "-loop", "1", "-i", str(logo),
-            "-filter_complex", logo_overlay(branding or {}, frame.w),
+            "-filter_complex", logo_overlay(branding or {}, frame.w, frame_h=frame.h),
             "-map", "[v]", "-map", "0:a",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-pix_fmt", "yuv420p", "-r", "60", "-c:a", "copy",
@@ -297,11 +297,14 @@ def assemble(
     music_offset: float = 0.0,
     frame: Frame = LANDSCAPE,
     final_name: str = "final.mp4",
+    work_dir: Path | None = None,
 ) -> Path:
     """hook_files: prebuilt cold open glimpses (from build_intro_hook);
     None = build them here (backward compatible). intro_seconds overrides
     the config (intro adjustment for drop sync). music_offset: start the
-    music this many seconds INTO the track, with a short fade-in."""
+    music this many seconds INTO the track, with a short fade-in.
+    frame/final_name/work_dir: the 9:16 film is a second pass with its own
+    cards and timeline next to the landscape one."""
     editing = cfg.get("editing", {})
     intro_s = (
         float(editing.get("intro_seconds", 2.5))
@@ -311,7 +314,7 @@ def assemble(
     outro_s = float(editing.get("outro_seconds", 2.5))
     game_vol = float(editing.get("game_audio_volume", 0.25))
 
-    work = run_dir / "04-segments"
+    work = work_dir or run_dir / "04-segments"
     intro = work / "00_intro.mp4"
     outro = work / "99_outro.mp4"
     files, _ = branding_files(cfg)  # missing files are flagged by cmd_finish
@@ -457,6 +460,7 @@ def write_report(
     run_dir: Path,
     events: dict | None = None,
     thumbnail: Path | None = None,
+    vertical: Path | None = None,
 ) -> Path:
     final_duration = probe_duration(final_path)
     lines = [
@@ -469,6 +473,10 @@ def write_report(
     ]
     if thumbnail:
         lines.append(f"**Thumbnail:** {thumbnail.name}")
+    if vertical:
+        lines.append(
+            f"**Vertical:** {vertical.name} ({probe_duration(vertical):.1f} s, 9:16)"
+        )
     # the drop sync decision (put in the beats dict by cmd_finish)
     ds = beats.get("drop_sync")
     if ds:

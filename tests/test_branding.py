@@ -89,8 +89,11 @@ def test_overlay() -> None:
           "x=W-w-48:y=H-h-48" in logo_overlay({"logo_position": "middle"}, 1920))
     check("width is a share of the frame (12% of 1920 = 230)", "scale=230:-1" in br, br)
     check("size is clamped", "scale=960:-1" in logo_overlay({"logo_size": 5}, 1920))
-    check("a 9:16 frame gets a smaller logo and margin",
-          "scale=130:-1" in logo_overlay({}, 1080) and "W-w-27" in logo_overlay({}, 1080))
+    portrait = logo_overlay({}, 1080, frame_h=1920)
+    check("9:16: the same logo width (a share of the long side), a narrower margin",
+          "scale=230:-1" in portrait and "W-w-27" in portrait, portrait)
+    check("9:16: bottom positions move to the top, below the app bar (10%)",
+          "y=192" in portrait and "H-h" not in portrait, portrait)
     check("ends in yuv420p (the purple-film trap)", br.endswith("format=yuv420p[v]"))
 
 
