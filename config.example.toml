@@ -124,6 +124,7 @@ sidechain_threshold = 0.05     # music level where ducking kicks in
 sidechain_ratio = 8.0          # how hard it ducks (higher = more)
 sidechain_release_ms = 300     # how fast the game audio comes back up
 stats_outro = true             # outro with kills/K-D/HS%/best clutch instead of just text
+thumbnail = true               # thumbnail.jpg (1280x720) of the climax kill next to final.mp4
 sfx = true                     # whoosh into clip changes + impact on big kills
 sfx_volume = 0.35              # SFX level in the mix (impact gets ×1.3)
 sfx_dir = "assets/sfx"         # your own .wav files here override; if missing, they're synthesized

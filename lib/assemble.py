@@ -455,6 +455,7 @@ def write_report(
     final_path: Path,
     run_dir: Path,
     events: dict | None = None,
+    thumbnail: Path | None = None,
 ) -> Path:
     final_duration = probe_duration(final_path)
     lines = [
@@ -465,6 +466,8 @@ def write_report(
         f"**Style:** {plan.style}",
         f"**Music:** {plan.music_track} ({beats.get('bpm', '?')} BPM)",
     ]
+    if thumbnail:
+        lines.append(f"**Thumbnail:** {thumbnail.name}")
     # the drop sync decision (put in the beats dict by cmd_finish)
     ds = beats.get("drop_sync")
     if ds:

@@ -665,9 +665,21 @@ def cmd_finish(args: argparse.Namespace) -> int:
             f"with: python main.py finish {args.run_dir} --music <file>"
         )
 
+    thumbnail = None
+    if editing.get("thumbnail", True):
+        from lib.thumbnail import make_thumbnail
+
+        try:
+            thumbnail = make_thumbnail(
+                plan, candidates_by_id, clips_dir, run_dir / "thumbnail.jpg",
+                cfg, log_path,
+            )
+        except FfmpegError as exc:  # a thumbnail never fails the film
+            flags.append(f"No thumbnail: {str(exc).splitlines()[0]}")
+
     report = write_report(
         plan, candidates_by_id, cut_log, flags, beats_used, final, run_dir,
-        events=events,
+        events=events, thumbnail=thumbnail,
     )
 
     if flags:
@@ -677,6 +689,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
     print()
     print(f"DONE: {final}")
     print(f"Report: {report}")
+    if thumbnail:
+        print(f"Thumbnail: {thumbnail}")
     print(f"Raw clips are kept until you've watched the film — "
           f"delete them with: python main.py cleanup {args.run_dir}")
     return 0

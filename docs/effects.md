@@ -76,6 +76,7 @@ preset = "hype"   # custom | clean | hype | cinematic
 | Instant replay | `[effects].instant_replay` | The climax kill rewinds and replays in slow-mo from the victim's POV. *Requires an extra render pass* |
 | Drop sync | `[editing].drop_sync` | Places the climax clip on the music's bass drop. Tracks without a clear drop fall back to climax-at-the-end |
 | Stats outro | `[editing].stats_outro` | Outro card with kills, K/D, HS% and best clutch instead of plain text |
+| Thumbnail | `[editing].thumbnail` | `thumbnail.jpg` next to `final.mp4`: 1280×720 and under 2 MB, as YouTube asks. The frame is from the climax clip just before the last kill, with the film's grade and LUT, a slight push-in, the climax label (the overlay text, or ACE / 4K / 1vX) and your `[branding]` logo. If it fails, the film is still made, and a flag says why |
 
 ## Branding
 
