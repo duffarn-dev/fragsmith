@@ -133,6 +133,7 @@ def render_local(job: dict, demo_path: Path, run_dir: Path, render_cfg: dict) ->
         )
     except Exception as exc:
         result["error"] = str(exc)
+        result["versions"] = worker.detect_versions(csdm_path(render_cfg))
         raise
     finally:
         (run_dir / "render-result.json").write_text(

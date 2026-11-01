@@ -17,7 +17,7 @@ Every merge to `main` is a release. The `release` workflow reads the version fro
 Release day is a maximum, not a deadline. If nothing finished is on `develop`, skip the release.
 
 1. **`develop` is green** and holds nothing half-done.
-2. **Check it with a real demo** on the render PC: `run` → `render` → `finish` on a fresh demo, and watch the film.
+2. **Check it with a real demo:** `python main.py selftest` (renders and edits two clips from a fresh demo). For bigger changes, also make a real film (`run` → `render` → `finish`) and watch it.
 3. **Bump the version** with a PR to `develop`:
    ```
    git switch develop && git pull

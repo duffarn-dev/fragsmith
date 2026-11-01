@@ -72,6 +72,13 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - A PR whose merge commit was rewritten afterwards (force push) disappears from generated release notes: GitHub can't link it to the history anymore. v0.1.0 lists PR #1 by hand for that reason. Changes to them on `develop` show up on GitHub after the next release to `main`.
 - Commits that GitHub creates (the squash and merge buttons, `gh pr merge`) take the author name and email from the GitHub **account**, not from the local `git config`. Turn on "Keep my email addresses private" (github.com/settings/emails) before the first merge, or the account's primary email lands in public history. It happened here once: the squash commit had to be rewritten, and the old commit stays reachable through the PR until GitHub Support removes it.
 
+## Selftest and versions
+
+- A CS2 demo's header (`demoparser2` `parse_header()`) says which game version recorded it: `patch_version` is steam.inf's `PatchVersion` without dots (1.41.9.4 → `14194`), and `game_directory` contains `csgo_v<ClientVersion>`. So "is this demo fresh?" can be checked exactly, before rendering, instead of guessing from the file date (which is the download date, not the match date).
+- HLAE's and CS Demo Manager's versions are the Windows file versions of `%USERPROFILE%\.csdm\hlae\HLAE.exe` and `cs-demo-manager.exe` (next to `csdm.cmd`). `worker.file_version` reads them with `ctypes` (version.dll), so the worker stays standard-library only. They're four-part (`2.192.10.0`); the selftest compares the first three, as the GitHub tags have them.
+- The worker puts those versions in every render result, so the main PC learns what the render PC runs without an extra SSH call. A worker copied before that change returns results without `versions`, which the selftest reports as "the worker is older than this Fragsmith".
+- `selftest` takes `cmd_render` and `cmd_finish` as arguments from `main.py` instead of importing them (that would be circular). It tests the real commands, not a copy.
+
 ## Upstream watcher
 
 - Steam's `ISteamApps/UpToDateCheck/v1/?appid=730&version=0` answers with the current CS2 version in `message` ("Server version required: 1.41.9.4"), the same format as `PatchVersion` in the installed `game/csgo/steam.inf`. No API key needed. The same goes for GitHub's `releases/latest` (which skips drafts and pre-releases) and PyPI's JSON API.

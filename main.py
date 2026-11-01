@@ -3,6 +3,7 @@
 First time:
     python main.py setup               writes config.toml (one PC or two)
     python main.py doctor              checks that everything is in place
+    python main.py selftest            renders a short test film end to end
 
 Workflow:
     python main.py run <demo.dem>      steps 0-3, stops at the edit plan
@@ -744,6 +745,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return run_doctor(PROJECT_DIR)
 
 
+def cmd_selftest(args: argparse.Namespace) -> int:
+    from lib.selftest import run_selftest
+
+    read_learnings()
+    return run_selftest(PROJECT_DIR, args, load_config(), cmd_render, cmd_finish)
+
+
 def cmd_setup(args: argparse.Namespace) -> int:
     from lib.doctor import run_setup
 
@@ -772,6 +780,19 @@ def main() -> int:
 
     doc_p = sub.add_parser("doctor", help="Check that everything needed is installed and configured")
     doc_p.set_defaults(func=cmd_doctor)
+
+    st_p = sub.add_parser(
+        "selftest",
+        help="Render and edit two clips from a fresh demo to check the whole chain still works",
+    )
+    st_p.add_argument("--demo", help="Demo to test with (default: newest in [selftest].demo_dir)")
+    st_p.add_argument("--player", help="SteamID64 for the POV (overrides config)")
+    st_p.add_argument("--write-tested", action="store_true",
+                      help="After a PASS, record the versions in compat/tested-versions.json")
+    st_p.add_argument("--keep", action="store_true", help="Keep raw clips and segments after a PASS")
+    st_p.add_argument("--timeout", type=float, default=30,
+                      help="Minutes to wait for the render PC (two-PC modes, default 30)")
+    st_p.set_defaults(func=cmd_selftest)
 
     run_p = sub.add_parser("run", help="Steps 0-3 for one demo: parse, score, edit plan")
     run_p.add_argument("demo", help="Path to a .dem or .dem.bz2 file")
