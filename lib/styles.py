@@ -90,7 +90,9 @@ STYLES: dict[str, dict[str, dict]] = {
             "intro_hook": True,
             "slowmo_punch": True,
             "letterbox_on_slowmo": True,
-            "grain": 0.25,
+            # h264 at crf 18 smooths fine noise away: 0.25 was invisible next
+            # to "clean" in a 1:1 crop, 0.5 shows (mostly in motion)
+            "grain": 0.5,
             "freeze_on_finish": True,
             "freeze_seconds": 0.7,
             "headshot_punch": False,
