@@ -117,6 +117,13 @@ There are no `duplicate`, `wontfix` or `invalid` labels: close the issue as *dup
 
 New issues go through the forms in `.github/ISSUE_TEMPLATE/` (bug report, feature idea). Blank issues are off, and security problems go to the private Security tab.
 
+## Roadmap and milestones
+
+- [ROADMAP.md](../ROADMAP.md) is the public overview: Now / Next / Later, with no dates. Every item under **Now** has an issue.
+- The [project board](https://github.com/users/duffarn-dev/projects/1) tracks those issues: **Backlog → Next → In progress → Done**. Move an issue to *In progress* when its branch starts, and to *Done* when it's merged into `develop`. With `gh`: `gh project item-edit` (needs the `project` scope: `gh auth refresh -s project`).
+- Each release has a GitHub milestone (`v0.3.0`, ...). A PR gets the milestone of the next release when it's merged into `develop`, so the milestone shows what a release will contain before it ships.
+- `Closes #N` only works for PRs into the default branch (`main`). After merging a feature PR into `develop`, close its issue by hand with a comment saying which release it ships in, and remove the item from **Now** in the same PR.
+
 ## Releases
 
 Releases happen on a fixed day (Friday), but only when there's something finished on `develop`. If nothing is finished, there's no release. The release is a PR from `develop` to `main`, merged with a merge commit. The `release` workflow then tags `main` and publishes the release notes. The full checklist is in [releasing.md](releasing.md).
