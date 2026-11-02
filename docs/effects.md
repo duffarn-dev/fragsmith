@@ -19,8 +19,8 @@ preset = "hype"   # custom | clean | hype | cinematic
 |---|---|
 | `custom` | Your `[effects]` and `[editing]`, exactly as written. The default |
 | `clean` | Grade, vignette and beat cuts. No zooms, flashes, counters, replay or sound effects, and a lower intensity |
-| `hype` | Everything on and stronger: beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, counter, impact split, freeze, replay, louder sound effects |
-| `cinematic` | Letterbox, film grain, slow-mo push-ins, a gentle kill zoom, a long freeze and the replay. Nothing that shakes or flashes |
+| `hype` | Everything on and stronger: beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, counter, impact split, freeze, replay, louder sound effects, and a riser, a gap and a boom on the drop |
+| `cinematic` | Letterbox, film grain, slow-mo push-ins, a gentle kill zoom, a long freeze, the replay, and a riser and a gap before the drop. Nothing that shakes or flashes |
 
 - **Only some switches are set.** A preset sets only the switches it names (the full list is in `lib/styles.py`). Everything else keeps your value. That includes `enabled` (still the master switch), your `lut`, and the quality settings `eased_ramps` and `smooth_slowmo`.
 - **For one film:** `python main.py run <demo> --style cinematic` (also `batch --style`).
@@ -111,6 +111,18 @@ The logo costs one extra encode of the film (about 12 s for a one-minute film). 
 | Game audio level | `[editing].game_audio_volume` | Game sound volume under the music |
 | Sidechain ducking | `[editing].sidechain_duck` + `sidechain_threshold`, `sidechain_ratio`, `sidechain_release_ms` | Ducks game audio dynamically based on the music's level, for a cleaner mix |
 | Sound effects | `[editing].sfx`, `sfx_volume`, `sfx_dir` | Whoosh into clip changes and impact on big kills. Put your own `.wav` files in `sfx_dir` to override. If they're missing, they're synthesized |
+| Riser | `[editing].riser` | A rising sweep that ends on the music's drop. It's 2 bars long at the track's tempo, 4 s at most |
+| Drop gap | `[editing].drop_gap` | The whole mix drops out just before the drop (1/8 of a beat, at least 0.1 s), so the drop hits after a moment of silence |
+| Drop boom | `[editing].drop_boom` | A sub boom on the drop. It has an octave on top, so phone speakers play it too |
+
+**How the drop cues work:**
+- **Where they go:** on the drop when drop sync has put the climax there. Without a drop, the riser and the boom go on the start of the climax clip.
+- **No gap without a drop:** silence in the middle of a musical phrase sounds like a glitch, not like a build-up.
+- **The riser ends where the gap starts,** so the drop is the first sound after the silence.
+- **Your own sounds:** put your own `riser.wav` or `boom.wav` in `sfx_dir`. A riser longer than needed is cut from its start, so it still ends on its peak.
+- **Level and switches:** the cues follow `sfx_volume`, and they're off with `[effects].enabled = false`.
+- **No clipping:** with any of them on, a limiter keeps the mix below 0 dB, so the boom can't clip on the loudest moment of the track.
+- `report.md` lists the cues and where they landed.
 
 ## Render options
 

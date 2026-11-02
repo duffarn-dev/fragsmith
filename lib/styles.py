@@ -42,7 +42,7 @@ STYLES: dict[str, dict[str, dict]] = {
             "impact_split": False,
             "instant_replay": False,
         },
-        "editing": {"sfx": False},
+        "editing": {"sfx": False, "riser": False, "drop_gap": False, "drop_boom": False},
     },
     # Everything on and stronger: the classic fragmovie.
     "hype": {
@@ -72,7 +72,13 @@ STYLES: dict[str, dict[str, dict]] = {
             "impact_split": True,
             "instant_replay": True,
         },
-        "editing": {"sfx": True, "sfx_volume": 0.45},
+        "editing": {
+            "sfx": True,
+            "sfx_volume": 0.45,
+            "riser": True,
+            "drop_gap": True,
+            "drop_boom": True,
+        },
     },
     # Film look: letterbox, grain, slow pushes, long freezes, the replay.
     # Nothing that shakes or flashes.
@@ -103,7 +109,14 @@ STYLES: dict[str, dict[str, dict]] = {
             "impact_split": False,
             "instant_replay": True,
         },
-        "editing": {"sfx": True, "sfx_volume": 0.25},
+        # the build-up and the silence, but no boom: it's a film, not a club
+        "editing": {
+            "sfx": True,
+            "sfx_volume": 0.25,
+            "riser": True,
+            "drop_gap": True,
+            "drop_boom": False,
+        },
     },
 }
 
