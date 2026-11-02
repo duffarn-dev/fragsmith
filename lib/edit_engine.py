@@ -23,7 +23,7 @@ from lib.ffmpeg_util import (
 )
 from lib.hype_score import LONG_SHOT_M
 from lib.kinetic import available as kinetic_available
-from lib.kinetic import kinetic_clip, movie_source, text_box
+from lib.kinetic import AMBER, kinetic_clip, movie_source, text_box
 from lib.models import EditDecision, EditPlan
 
 ENCODE_ARGS = [
@@ -523,7 +523,16 @@ def _build_filter(
                 f":enable='between(t,{start:.3f},{end:.3f})'"
                 f":alpha='min(1,(t-{start:.3f})/0.15)'"
             )
-    if tags:
+    if tags and kinetic_dir is not None:
+        # Each tag slams in like the overlay text, in its own amber and size,
+        # where the drawtext version sits (y is its top edge), for ~1.1 s
+        for start, label in tags:
+            clip, cw, ch = kinetic_clip(label, 46, 1.1, kinetic_dir, log_path,
+                                        fill=AMBER)
+            _, th = text_box(label, 46)
+            layers.append((clip, start, round((frame.w - cw) / 2),
+                           round(frame.h * 0.57 + th / 2 - ch / 2), False))
+    elif tags:
         # Kill tags (NOSCOPE, WALLBANG, ...) pop in just under the crosshair
         # on their kill and fade after ~1 s: amber, so they read as a callout,
         # not as the overlay text (center, 72%) or the counter (left)
