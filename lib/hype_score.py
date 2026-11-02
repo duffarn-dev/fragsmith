@@ -15,6 +15,37 @@ AWP_WEAPONS = {"awp"}
 DEAGLE_WEAPONS = {"deagle", "revolver"}
 
 
+def is_teamkill(kill: dict) -> bool:
+    """Both teams known and the same, and the attacker isn't the victim."""
+    team = kill.get("attacker_team")
+    return (
+        team in ("T", "CT")
+        and team == kill.get("victim_team")
+        and kill.get("attacker_steamid") != kill.get("victim_steamid")
+    )
+
+
+def counts_as_kill(kill: dict) -> bool:
+    """A kill on an enemy. Teamkills and suicides never count: not in the
+    clips, the scores, the counter, the effects or the stats. Clutch
+    detection still reads every death (the victim is gone either way)."""
+    attacker = kill.get("attacker_steamid")
+    return (
+        bool(attacker)
+        and attacker != kill.get("victim_steamid")
+        and not is_teamkill(kill)
+    )
+
+
+def teamkills_by(events: dict, steamid: str) -> list[dict]:
+    if not steamid:
+        return []
+    return [
+        k for k in events.get("kills", [])
+        if k.get("attacker_steamid") == steamid and is_teamkill(k)
+    ]
+
+
 def build_candidates(
     events: dict,
     cfg: dict,
@@ -25,7 +56,7 @@ def build_candidates(
     clips_cfg = cfg.get("clips", {})
     known = [str(p) for p in cfg.get("players", {}).get("known_players", [])]
 
-    kills = [k for k in events["kills"] if k["attacker_steamid"]]
+    kills = [k for k in events["kills"] if counts_as_kill(k)]
     present = {k["attacker_steamid"] for k in kills}
 
     # --- Pick the POV player ---------------------------------------------
@@ -71,6 +102,10 @@ def build_candidates(
             f"Others: {', '.join(others)}"
         )
 
+    teamkills = teamkills_by(events, best_pov)
+    if teamkills:
+        flags.append(teamkill_note(teamkills))
+
     # --- Cap: ALWAYS keep 3k+ and won clutches ---------------------------
     max_candidates = int(clips_cfg.get("max_candidates", 25))
     must_keep = [c for c in best_clips if c.kill_count >= 3 or c.kind == "clutch"]
@@ -95,6 +130,19 @@ def build_candidates(
             f"strict rules?"
         )
     return kept, flags, best_pov
+
+
+def teamkill_note(teamkills: list[dict]) -> str:
+    """One line for the flags and report.md, so a left-out teamkill doesn't
+    look like a missed kill."""
+    where = ", ".join(
+        f"round {k['round']} ({k.get('victim_name') or 'a teammate'})"
+        for k in teamkills
+    )
+    return (
+        f"{len(teamkills)} teamkill(s) left out: {where}. They don't count "
+        f"as kills in the clips, the counter, the effects or the stats."
+    )
 
 
 def _name_of(steamid: str, events: dict) -> str:
