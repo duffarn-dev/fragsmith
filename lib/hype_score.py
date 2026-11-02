@@ -12,6 +12,7 @@ from lib.models import Highlight, KillMark
 
 SPECIAL_SINGLE_WEAPONS = {"knife", "knife_t", "bayonet", "taser", "zeus"}
 AWP_WEAPONS = {"awp"}
+DEAGLE_WEAPONS = {"deagle", "revolver"}
 LONG_SHOT_M = 35.0  # a kill from at least this far counts as a style point
 CONTEXT_FLAGS = ("noscope", "through_smoke", "wallbang", "jumpshot", "blind")
 
@@ -21,7 +22,6 @@ def style_points(kill: dict) -> int:
     jumpshot, blind, long shot)."""
     points = sum(1 for flag in CONTEXT_FLAGS if kill.get(flag))
     return points + (1 if float(kill.get("distance_m") or 0) >= LONG_SHOT_M else 0)
-DEAGLE_WEAPONS = {"deagle", "revolver"}
 
 
 def is_teamkill(kill: dict) -> bool:
