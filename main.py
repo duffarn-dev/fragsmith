@@ -341,14 +341,16 @@ def cmd_render(args: argparse.Namespace) -> int:
     )
 
     job = build_render_job(run_id, plan, candidates_by_id, pov_steamid, pov_name, cfg)
-    high = [c for c in job["clips"] if c.get("framerate")]
-    if high:
-        two_passes = len(high) < len(job["clips"])
-        print(
-            f"{len(high)} clip(s) rendered at {high[0]['framerate']} fps "
-            f"({', '.join(c['clip_id'] for c in high)})"
-            + (" — 2 render passes (one extra CS2 launch)." if two_passes else ".")
-        )
+    # one CS2 launch per frame rate (clips without one use the base rate)
+    by_rate: dict[int, list[str]] = {}
+    for c in job["clips"]:
+        by_rate.setdefault(c.get("framerate", 0), []).append(c["clip_id"])
+    for rate, ids in sorted(by_rate.items()):
+        if rate:
+            print(f"{len(ids)} clip(s) rendered at {rate} fps ({', '.join(ids)})")
+    if len(by_rate) > 1:
+        print(f"{len(by_rate)} render passes ({len(by_rate) - 1} extra CS2 launch"
+              f"{'es' if len(by_rate) > 2 else ''}).")
     n_alt = sum(1 for c in job["clips"] if c.get("alt_pov_steamid"))
     if n_alt:
         alt = next(c for c in job["clips"] if c.get("alt_pov_steamid"))
