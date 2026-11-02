@@ -21,13 +21,14 @@ sys.path.insert(0, str(PROJECT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from lib.edit_engine import (  # noqa: E402
+    PORTRAIT,
     TRANSITIONS,
     _simulate_timeline,
     build_segments,
     pick_transitions,
 )
 from lib.ffmpeg_util import probe_duration  # noqa: E402
-from lib.models import EditDecision, EditPlan, Highlight  # noqa: E402
+from lib.models import EditDecision, EditPlan, Highlight, KillMark  # noqa: E402
 
 FAILS: list[str] = []
 FRAME = 1 / 60
@@ -87,6 +88,13 @@ def gray(path: Path, t: float) -> bytes:
 
 def diff(a: bytes, b: bytes) -> float:
     return sum(abs(x - y) for x, y in zip(a, b)) / max(1, len(a))
+
+
+def sar(path: Path) -> str:
+    return subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+         "stream=sample_aspect_ratio", "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True).stdout.strip()
 
 
 def stream_durations(path: Path) -> tuple[float, float]:
@@ -200,10 +208,51 @@ def test_timeline(tmp: Path) -> None:
                   for a, c in zip(ends_off, glitch_log)))
 
 
+def test_portrait_replay(tmp: Path) -> None:
+    """9:16 with a transition into a climax that gets the instant replay:
+    the replay joins the segment to the replay source, which needs the
+    same pixel aspect (seen: 10240:10239 vs 1:1 failed the concat)."""
+    print("9:16 with a transition into the replay clip")
+    clips = tmp / "clips"
+    clips.mkdir()
+    make_clip(clips / "c1.mp4", 6.3)
+    make_clip(clips / "c2.mp4", 6.0)
+    kills = [KillMark(tick=64 * (2 + i), offset_s=2.0 + i, weapon="ak47", headshot=False,
+                      victim_name="bot", victim_steamid="765x") for i in range(3)]
+    cands = {
+        "c1": Highlight(clip_id="c1", start_tick=0, end_tick=400, player_steamid="765me",
+                        kill_count=2, kind="multikill", hype_score=3.0, round=1,
+                        duration_seconds=6.3, player_name="Tester"),
+        "c2": Highlight(clip_id="c2", start_tick=0, end_tick=384, player_steamid="765me",
+                        kill_count=3, kind="multikill", hype_score=5.5, round=2,
+                        duration_seconds=6.0, player_name="Tester", kills=kills),
+    }
+    plan = EditPlan(demo_path="mock.dem", music_track="mock.mp3", intro_text="T",
+                    outro_text="GG", dropped_clip_ids=[],
+                    decisions=[decision("c1", 1), decision("c2", 2)])
+    cfg = cfg_with(["zoom"])
+    cfg["effects"]["instant_replay"] = True
+    try:
+        files, log, _ = build_segments(plan, cands, clips, tmp / "v", beats_grid(), cfg,
+                                       tmp / "ffmpeg.log", timeline_start=TIMELINE_START,
+                                       frame=PORTRAIT)
+    except Exception as exc:  # noqa: BLE001 - the failure is the finding
+        check("the 9:16 replay after a transition builds", False, str(exc).splitlines()[0])
+        return
+    names = [p.name for p in files]
+    check("the replay follows the clip that came in with a zoom",
+          names == ["01_c1.mp4", "02_c2.mp4", "02b_c2_replay.mp4"]
+          and log[1].get("transition_in") == "zoom", str(names))
+    sars = {sar(p) for p in files}
+    check("every 9:16 segment has square pixels", sars == {"1:1"}, str(sars))
+
+
 if __name__ == "__main__":
     test_pick()
     with tempfile.TemporaryDirectory() as t:
         test_timeline(Path(t))
+    with tempfile.TemporaryDirectory() as t:
+        test_portrait_replay(Path(t))
     print()
     if FAILS:
         print(f"FAILED: {len(FAILS)}: {FAILS}")

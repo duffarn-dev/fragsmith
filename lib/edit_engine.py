@@ -55,9 +55,11 @@ class Frame(NamedTuple):
     def normalize(self) -> str:
         """Filters that bring any source into this frame (fps not included)."""
         if self.cover:
+            # setsar=1: the cover scale leaves a 10240:10239 pixel aspect, and
+            # filters that join two streams (concat, xfade) need them equal
             return (
                 f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,"
-                f"crop={self.w}:{self.h}"
+                f"crop={self.w}:{self.h},setsar=1"
             )
         return (
             f"scale={self.w}:{self.h}:force_original_aspect_ratio=decrease,"
@@ -625,12 +627,12 @@ def _with_transitions(
         # segment, and xfade drops the last frame of [b] at its end
         chains.append(
             f"{v}tpad=start_mode=clone:start={half_in}:stop_mode=clone:stop=-1,"
-            f"trim=end_frame={main_f + 2},setpts=PTS-STARTPTS,fps=60,format=yuv420p[vb]"
+            f"trim=end_frame={main_f + 2},setpts=PTS-STARTPTS,fps=60,format=yuv420p,setsar=1[vb]"
         )
         # the tail gets a little extra: xfade drops what's left of [a] after
         # the transition, but stops early if [a] runs out
         chains.append(
-            "[1:v]setpts=PTS-STARTPTS,fps=60,format=yuv420p,"
+            "[1:v]setpts=PTS-STARTPTS,fps=60,format=yuv420p,setsar=1,"
             "tpad=stop_mode=clone:stop=6[va]"
         )
         chains.append(f"[va][vb]{_xfade(kind_in, d_in)}[vmain]")
