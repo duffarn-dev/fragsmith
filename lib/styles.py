@@ -81,7 +81,6 @@ STYLES: dict[str, dict[str, dict]] = {
         "editing": {
             "sfx": True,
             "sfx_volume": 0.45,
-            "riser": True,
             "drop_gap": True,
             "drop_boom": True,
         },
@@ -120,11 +119,10 @@ STYLES: dict[str, dict[str, dict]] = {
             # a push, never a whip or a glitch
             "transitions": ["zoom"],
         },
-        # the build-up and the silence, but no boom: it's a film, not a club
+        # the silence, but no boom: it's a film, not a club
         "editing": {
             "sfx": True,
             "sfx_volume": 0.25,
-            "riser": True,
             "drop_gap": True,
             "drop_boom": False,
         },

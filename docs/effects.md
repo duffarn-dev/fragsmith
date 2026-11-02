@@ -19,8 +19,8 @@ preset = "hype"   # custom | clean | hype | cinematic
 |---|---|
 | `custom` | Your `[effects]` and `[editing]`, exactly as written. The default |
 | `clean` | Grade, vignette and beat cuts. No zooms, flashes, counters, replay or sound effects, and a lower intensity |
-| `hype` | Everything on and stronger: motion blur on the climax, whip, zoom and glitch transitions, beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, kinetic text and counter, impact split, freeze, replay, louder sound effects, and a riser, a gap and a boom on the drop |
-| `cinematic` | Letterbox, film grain, motion blur on the climax, zoom transitions, slow-mo push-ins, a gentle kill zoom, a long freeze, the replay, and a riser and a gap before the drop. Nothing that shakes or flashes |
+| `hype` | Everything on and stronger: motion blur on the climax, whip, zoom and glitch transitions, beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, kinetic text and counter, impact split, freeze, replay, louder impacts, and a gap and a boom on the drop |
+| `cinematic` | Letterbox, film grain, motion blur on the climax, zoom transitions, slow-mo push-ins, a gentle kill zoom, a long freeze, the replay, and a gap before the drop. Nothing that shakes or flashes |
 
 - **Only some switches are set.** A preset sets only the switches it names (the full list is in `lib/styles.py`). Everything else keeps your value. That includes `enabled` (still the master switch), your `lut`, and the quality settings `eased_ramps` and `smooth_slowmo`.
 - **For one film:** `python main.py run <demo> --style cinematic` (also `batch --style`).
@@ -116,8 +116,9 @@ The logo costs one extra encode of the film (about 12 s for a one-minute film). 
 |---|---|---|
 | Game audio level | `[editing].game_audio_volume` | Game sound volume under the music |
 | Sidechain ducking | `[editing].sidechain_duck` + `sidechain_threshold`, `sidechain_ratio`, `sidechain_release_ms` | Ducks game audio dynamically based on the music's level, for a cleaner mix |
-| Sound effects | `[editing].sfx`, `sfx_volume`, `sfx_dir` | Whoosh into clip changes and impact on big kills. Put your own `.wav` files in `sfx_dir` to override. If they're missing, they're synthesized |
-| Riser | `[editing].riser` | A rising sweep that ends on the music's drop, as loud as the music under it. It's 2 bars long at the track's tempo, 4 s at most |
+| Sound effects | `[editing].sfx`, `sfx_volume`, `sfx_dir` | An impact on big kills. Put your own `.wav` files in `sfx_dir` to override. If they're missing, they're synthesized |
+| Whoosh | `[editing].whoosh` | A whoosh into every clip change, in the middle of the transition. Needs `sfx`. Off by default and in every style, because on every cut it's heard on top of the music |
+| Riser | `[editing].riser` | A rising sweep that ends on the music's drop, as loud as the music under it. It's 2 bars long at the track's tempo, 4 s at most. Off by default and in every style |
 | Drop gap | `[editing].drop_gap` | The whole mix drops out just before the drop (1/8 of a beat, at least 0.1 s), so the drop hits after a moment of silence |
 | Drop boom | `[editing].drop_boom` | A sub boom on the drop. It has an octave on top, so phone speakers play it too |
 
