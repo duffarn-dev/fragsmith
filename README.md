@@ -14,7 +14,7 @@ Point Fragsmith at a `.dem` file. It finds your best rounds, renders them from y
 
 ## Features
 
-- **Finds the highlights.** Multikills, aces, won clutches (detected from who's alive, not guessed), knife, zeus and AWP headshot moments.
+- **Finds the highlights.** Multikills, aces, won clutches (detected from who's alive, not guessed), knife, zeus and AWP headshot moments, noscopes, wallbangs, jumpshots and kills through smoke, each called out on screen.
 - **Picks the order like an editor would.** Strong opener, build-up, best clip last. Use the built-in rules for free, or let Claude direct the film.
 - **Cuts on the beat.** Every cut snaps to the music, and the climax lands on the track's bass drop.
 - **Real slow-mo.** Slow-motion clips are rendered at 120 fps, so they're smooth instead of stuttery.

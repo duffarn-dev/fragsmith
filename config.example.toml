@@ -105,6 +105,8 @@ headshot_punch = true    # small zoom punch on headshots; the last kill is cover
 headshot_punch_strength = 1.0  # 1.0 ≈ 1.18× zoom (also scaled by intensity, capped at 1.22×)
 headshot_micro_slowmo = true   # short 0.4× moment around the headshot punch
 kill_counter = true      # counter 1→2→3→4K/ACE synced to each kill, clips with 3+ kills
+kill_tags = true         # NOSCOPE / WALLBANG / THROUGH SMOKE / JUMPSHOT / BLIND / long shot
+                         # callout under the crosshair on the kill (from the demo's kill events)
 lowerthird = true        # subtle context line in the bottom left: map · round · 1vX
 animated_overlays = true # overlay text slides up + fades instead of a hard on/off
 impact_split = true      # 3 frames of color shift on big kills; follows the punch selection

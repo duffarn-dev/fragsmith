@@ -21,6 +21,7 @@ from lib.ffmpeg_util import (
     probe_fps,
     run_ffmpeg,
 )
+from lib.hype_score import LONG_SHOT_M
 from lib.models import EditDecision, EditPlan
 
 ENCODE_ARGS = [
@@ -367,6 +368,7 @@ def _build_filter(
     impacts: list[float] | None = None,
     src_fps: float = 60.0,
     frame: Frame = LANDSCAPE,
+    tags: list[tuple[float, str]] | None = None,
 ) -> tuple[str, str, str]:
     """filter_complex: trim/setpts/atempo per part + concat + effects +
     overlay + entry transition. src_fps: the source frame rate; high-fps
@@ -494,6 +496,20 @@ def _build_filter(
                 f":x=70:y=h*0.35"
                 f":enable='between(t,{start:.3f},{end:.3f})'"
                 f":alpha='min(1,(t-{start:.3f})/0.15)'"
+            )
+    if tags:
+        # Kill tags (NOSCOPE, WALLBANG, ...) pop in just under the crosshair
+        # on their kill and fade after ~1 s: amber, so they read as a callout,
+        # not as the overlay text (center, 72%) or the counter (left)
+        for start, label in tags:
+            vf.append(
+                f"drawtext=fontfile='{FONT_FILE}'"
+                f":text='{drawtext_escape(label)}':expansion=none"
+                f":fontsize=46:fontcolor=0xFFB347:borderw=4:bordercolor=black"
+                f":x=(w-text_w)/2:y=h*0.57"
+                f":enable='between(t,{start:.3f},{start + 1.1:.3f})'"
+                f":alpha='if(lt(t-{start:.3f},0.1),(t-{start:.3f})/0.1,"
+                f"if(lt(t-{start:.3f},0.85),1,max(0,(1.1-(t-{start:.3f}))/0.25)))'"
             )
     if lowerthird:
         # Subtle context line (map · round · 1vX) in the bottom left, short
@@ -652,6 +668,23 @@ def _build_replay_segment(
         label,
     )
     return probe_duration(out_path)
+
+
+def kill_tag(km) -> str | None:
+    """The callout for a kill: up to two details, most special first
+    ("NOSCOPE · THROUGH SMOKE"), a long shot as "42 M"."""
+    labels = [
+        text for flag, text in (
+            ("noscope", "NOSCOPE"), ("wallbang", "WALLBANG"),
+            ("through_smoke", "THROUGH SMOKE"), ("jumpshot", "JUMPSHOT"),
+            ("blind", "BLIND"),
+        )
+        if getattr(km, flag, False)
+    ]
+    distance = float(getattr(km, "distance_m", 0.0) or 0.0)
+    if distance >= LONG_SHOT_M:
+        labels.append(f"{distance:.0f} M")
+    return "  ·  ".join(labels[:2]) or None
 
 
 def _choose(name: str, default: bool, d_on: set, d_off: set) -> bool:
@@ -1158,6 +1191,17 @@ def build_segments(
                 counter.append((t_out, label))
             counter = counter or None
 
+        # Kill tags: the style details of each kill, in output time
+        tags = None
+        if fx_on and fx.get("kill_tags", False) and kills:
+            tags = []
+            for km in kills:
+                label = kill_tag(km)
+                t_out = _out_time(km.offset_s)
+                if label and 0.2 < t_out < target_duration - 0.4:
+                    tags.append((t_out, label))
+            tags = tags or None
+
         # context line from Highlight fields (never from the Director);
         # missing fields are skipped, never an empty "None"
         lowerthird = None
@@ -1192,7 +1236,7 @@ def build_segments(
             freeze, hs_punches, [(s, e) for s, e, _ in micro],
             counter, lowerthird, impacts,
             src_fps=probe_fps(clip_path),  # high-fps source → real slow-mo
-            frame=frame,
+            frame=frame, tags=tags,
         )
         out_path = segments_dir / f"{decision.order:02d}_{decision.clip_id}.mp4"
         run_ffmpeg(
