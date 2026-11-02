@@ -73,6 +73,26 @@ def probe_fps(path: Path) -> float:
     return float(num) / float(den or 1)
 
 
+def probe_video_start(path: Path) -> float:
+    """When the first video frame is shown (stream start_time), 0 if unknown."""
+    proc = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=start_time",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise FfmpegError(f"ffprobe failed on {path}: {proc.stderr.strip()}")
+    try:
+        return max(0.0, float(proc.stdout.strip()))
+    except ValueError:  # "N/A"
+        return 0.0
+
+
 def drawtext_escape(text: str) -> str:
     """Escape text for use in drawtext=text=...
 

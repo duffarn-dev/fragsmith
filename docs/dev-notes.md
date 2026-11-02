@@ -10,6 +10,8 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - demoparser2 columns match the documentation on Valve MM demos (`attacker_`/`user_` prefixes, `total_rounds_played`, `is_warmup_period`, `team_num` 2=T / 3=CT).
 - Silent clutches (won without kills in the clutch phase, e.g. on time or defuse) used to flag earlier kills in the round as clutch kills. `detect_won_clutches` now returns `from_tick`, and only clips ending after it get the flag.
 - `player_death` has kill context columns: `noscope`, `thrusmoke`, `penetrated` (the number of surfaces, so >0 means a wallbang), `attackerinair`, `attackerblind` and `distance` (meters in CS2). Older demos or parsers can lack them, and pandas gives NaN for gaps: `bool(NaN)` is **True**, so read them through `kill_context()` in `parse_demo.py`, never with a bare `bool()`.
+- `player_death` also fires for teamkills and suicides, with nothing that marks them. Hype scoring used to count every death with an attacker, so an AWP headshot on a teammate turned a 2K into a "3K" with a headshot punch on the teamkill (#41). `hype_score.counts_as_kill` is now the one rule: an attacker, not the victim, and not the same known team (`attacker_team`/`victim_team` come from `team_num`). Scoring, the stats outro and `report.md` use it. Anything new that counts kills (tags, counters) should read the clip's `Highlight.kills` marks, which only hold real kills, not `events["kills"]`. `detect_won_clutches` deliberately reads every death, since a teamkilled teammate is gone from the round either way.
+- Without `known_players`, the POV is the player with the highest total hype score, so a scoring change can flip who gets filmed. On the showcase demo, dropping one teamkill was enough to make another player the fallback POV.
 
 ## CS Demo Manager CLI (csdm)
 
@@ -60,6 +62,9 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 
 - Synthesized sound must be peak-checked with `astats`. `volume=2.0` after `amix` clipped `impact.wav` into a square wave in 16-bit. Rule: always `alimiter=limit=0.95` as the last step of SFX synthesis, and check that the peak level is below -1 dB.
 - ffmpeg's `sine` source is quiet (~-18 dB), so "audible" needs a strong boost.
+- **A stream-copied concat of AAC parts drifts the audio.** Every part keeps its AAC priming (1024 samples) and its padding, but the video timestamps only follow each part's duration. The decoded audio ran ~27 ms ahead per join, so the game sound fell behind the picture: 211 ms after 8 parts in the test, and 140–230 ms in a real film before 2026-11-02. The mix doesn't use the timeline's audio. It decodes each part on its own (which drops its priming), cuts or pads it to the part's length, and joins them with the `concat` filter. `tests/test_audio_sync.py` checks it with a flash and a beep in every part.
+- **The concat step starts the picture ~21 ms in.** That's the first part's AAC priming. The mix starts the audio at the video's `start_time` (`asetpts=PTS+x/TB`), so it isn't ahead of the picture.
+- **Measure audio and video sync with a flash and a beep, not by ear.** Find the flash with `signalstats` (YAVG), and the beep by scanning the samples. Step through them 7 at a time, not 48: 48 samples is one period of a 1 kHz tone, so every probe can land on a zero crossing. For a real film, cross-correlate each part's own audio against the film, high-passed at 2 kHz so the music's bass doesn't win.
 
 ## Timeline
 

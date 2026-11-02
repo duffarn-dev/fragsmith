@@ -6,11 +6,21 @@ Have an idea? Open a [feature idea](https://github.com/duffarn-dev/fragsmith/iss
 
 ## Now
 
-Nothing is being built right now. Style presets, branding, the thumbnail and the vertical 9:16 film are done and ship in the next release. The next items are picked from the list below.
+The next big theme is **next-level editing**: films that look as if an editor cut them, not a tool. These are being built:
+
+- Kill context tags: NOSCOPE, WALLBANG, THROUGH SMOKE, JUMPSHOT and long shots, read from the demo ([#29](https://github.com/duffarn-dev/fragsmith/issues/29))
+- Sound design: a riser, a gap and a boom on the music's drop ([#30](https://github.com/duffarn-dev/fragsmith/issues/30))
 
 ## Next
 
-Likely after that. Not decided, and the order can change.
+Decided, and built after the items above:
+
+- Kinetic typography: text that slams in on the kill ([#31](https://github.com/duffarn-dev/fragsmith/issues/31))
+- Transitions on the beat: whip, zoom and glitch ([#32](https://github.com/duffarn-dev/fragsmith/issues/32))
+- Motion blur from a high-fps render ([#33](https://github.com/duffarn-dev/fragsmith/issues/33))
+- Research: a camera that flies around the climax kill ([#34](https://github.com/duffarn-dev/fragsmith/issues/34))
+
+Not decided yet, and the order can change:
 
 - A killfeed panel in the vertical film (the killfeed falls outside the 9:16 crop today)
 - A "best of the week" film from several demos
