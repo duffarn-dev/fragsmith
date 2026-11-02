@@ -3,8 +3,9 @@ silence just before it and a boom on it.
 
 Covers: where the cues are anchored (the drop, else the climax clip), their
 timing from the BPM, what turns them off, the synthesized riser and boom, and
-the real mix measured in time windows: louder before the gap, silent in it,
-and bass on the drop.
+the riser's level against the music under it (a loud, a quiet and a
+near-silent build-up), and the real mix measured in time windows: a riser as
+loud as the music before the gap, silence in it, and bass on the drop.
 
 Run: python tests/test_sound_design.py
 """
@@ -22,13 +23,15 @@ sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from lib.assemble import (  # noqa: E402
+    RISER_MATCH_SFX_VOLUME,
     _ensure_sfx,
     _text_card,
     assemble,
     drop_cue,
     drop_cue_times,
+    riser_gain,
 )
-from lib.ffmpeg_util import probe_duration  # noqa: E402
+from lib.ffmpeg_util import mean_volume, probe_duration  # noqa: E402
 from lib.models import EditDecision, EditPlan  # noqa: E402
 from lib.styles import apply_style  # noqa: E402
 
@@ -62,6 +65,21 @@ def rms_db(s: list[float], start: float, end: float) -> float:
         return -200.0
     rms = math.sqrt(sum(x * x for x in part) / len(part))
     return 20 * math.log10(rms) if rms > 0 else -200.0
+
+
+def without(total_db: float, other_db: float) -> float:
+    """The level of one sound in a sum, given the sum and the other sound
+    (uncorrelated, so their powers add)."""
+    rest = 10 ** (total_db / 10) - 10 ** (other_db / 10)
+    return 10 * math.log10(rest) if rest > 0 else -200.0
+
+
+def tone(path: Path, volume: float, seconds: float = 20) -> Path:
+    """A steady 440 Hz tone: -24.1 dB RMS at volume 1 (the sine source's
+    default), -18.1 dB at 2."""
+    ffmpeg("-f", "lavfi", "-i", f"sine=f=440:d={seconds}:r=48000", "-af", f"volume={volume}",
+           "-ac", "2", str(path))
+    return path
 
 
 def plan(*ids: str) -> EditPlan:
@@ -146,6 +164,37 @@ def test_synth(tmp: Path) -> None:
     check("the boom is mostly bass", rms_db(low, 0, 0.5) > rms_db(samples(sfx["boom"]), 0, 0.5) - 3)
 
 
+def test_riser_gain(tmp: Path) -> None:
+    print("the riser's level follows the music")
+    riser = _ensure_sfx(tmp / "sfx", tmp / "log.txt")["riser"]
+    level = tone(tmp / "level.wav", 2.0, 4)
+    check("mean_volume reads a known tone", abs(mean_volume(level) + 18.1) < 0.3,
+          f"{mean_volume(level):.1f} dB")
+    check("mean_volume reads only the stretch asked for",
+          mean_volume(riser, 0, 0.5) < mean_volume(riser, 3.5, 0.5) - 20)
+    end_db = mean_volume(riser, 3.5, 0.5)
+
+    def ends_at(music: Path, vol: float) -> float:
+        return end_db + 20 * math.log10(riser_gain(riser, music, 0, 4, vol))
+
+    quiet = tone(tmp / "quiet.wav", 1.0, 4)  # -24 dB, a quiet build-up
+    check("at hype's sfx_volume it ends as loud as the music",
+          abs(ends_at(quiet, RISER_MATCH_SFX_VOLUME) - mean_volume(quiet)) < 0.2,
+          f"{ends_at(quiet, RISER_MATCH_SFX_VOLUME):.1f} vs {mean_volume(quiet):.1f} dB")
+    check("at sfx_volume 0.35 it ends 2.2 dB under the music",
+          abs(ends_at(quiet, 0.35) - (mean_volume(quiet) - 2.2)) < 0.2,
+          f"{ends_at(quiet, 0.35):.1f} dB")
+    loud = tone(tmp / "loud.wav", 10.0, 4)  # -4 dB
+    check("under loud music it's never louder than the old fixed level",
+          riser_gain(riser, loud, 0, 4, 0.35) == 0.35 * 2.6)
+    silent = tone(tmp / "silent.wav", 0.01, 4)  # -64 dB
+    floor = tone(tmp / "floor.wav", 0.5, 4)  # -30 dB
+    check("a near-silent build-up counts as -30 dB, so the riser is still heard",
+          abs(ends_at(silent, 0.35) - ends_at(floor, 0.35)) < 0.3,
+          f"{ends_at(silent, 0.35):.1f} vs {ends_at(floor, 0.35):.1f} dB")
+    check("sfx_volume 0: silent", riser_gain(riser, quiet, 0, 4, 0.0) == 0.0)
+
+
 def test_mix(tmp: Path) -> None:
     print("the mix, measured")
     log = tmp / "log.txt"
@@ -156,21 +205,19 @@ def test_mix(tmp: Path) -> None:
         seg = work / f"seg{i}.mp4"
         _text_card(f"CLIP {i}", secs, seg, log, "test segment")
         segs.append(seg)
-    # constant music at -15 dB RMS (the sine source is -18 dB peak by
-    # default), so every cue stands out against it
-    music = tmp / "music.wav"
-    ffmpeg("-f", "lavfi", "-i", "sine=f=440:d=20:r=48000", "-af", "volume=2.0",
-           "-ac", "2", str(music))
+    # constant music at -18 dB RMS, and a quiet one at -24 dB
+    music = tone(tmp / "music.wav", 2.0)
+    quiet = tone(tmp / "quiet-music.wav", 1.0)
     # timeline: intro 1.0 | seg0 1-5 | seg1 5-9 | seg2 9-12 | outro; the drop is at 7.0
     cue = {"time_s": 7.0, "on_drop": True, "bpm": 120}
 
-    def film(name: str, editing: dict) -> list[float]:
+    def film(name: str, editing: dict, track: Path = music) -> list[float]:
         cfg = {
             "effects": {"intro_hook": False},
             "editing": {"intro_seconds": 1.0, "outro_seconds": 1.0, "sfx": False,
                         "sidechain_duck": False, "sfx_dir": str(tmp / "sfx"), **editing},
         }
-        out = assemble(plan("a", "b", "c"), segs, music, tmp, cfg, log, hook_files=[],
+        out = assemble(plan("a", "b", "c"), segs, track, tmp, cfg, log, hook_files=[],
                        cut_log=[], drop_cue=cue, final_name=name)
         return samples(out)
 
@@ -181,8 +228,20 @@ def test_mix(tmp: Path) -> None:
           f"{rms_db(plain, 6.93, 6.97):.1f} dB")
     check("with cues the gap is silent", rms_db(cued, 6.93, 6.97) < -60,
           f"{rms_db(cued, 6.93, 6.97):.1f} dB")
-    lift = rms_db(cued, 6.5, 6.85) - rms_db(plain, 6.5, 6.85)
-    check("the riser lifts the level before the gap by 6 dB or more", lift >= 6, f"+{lift:.1f} dB")
+    # the riser's last half second, without the music under it; sfx_volume
+    # is the default 0.35, so it ends 2.2 dB under the music
+    under = 20 * math.log10(0.35 / RISER_MATCH_SFX_VOLUME)
+    end = without(rms_db(cued, 6.4, 6.85), rms_db(plain, 6.4, 6.85))
+    check("the riser ends 2.2 dB under the music", abs(end - (rms_db(plain, 6.4, 6.85) + under)) < 1.5,
+          f"{end:.1f} dB, music {rms_db(plain, 6.4, 6.85):.1f} dB")
+    lift = rms_db(cued, 6.4, 6.85) - rms_db(plain, 6.4, 6.85)
+    check("the riser is heard: it lifts the level before the gap", lift >= 1.5, f"+{lift:.1f} dB")
+    # a quiet build-up: the old fixed level ended 12 dB over this one
+    soft = film("quiet.mp4", dict(ALL_ON), quiet)
+    soft_music = rms_db(soft, 1.5, 2.5)
+    soft_end = without(rms_db(soft, 6.4, 6.85), soft_music)
+    check("a quiet build-up gets a quiet riser", abs(soft_end - (soft_music + under)) < 1.5,
+          f"{soft_end:.1f} dB, music {soft_music:.1f} dB")
     check("before the riser the mix is unchanged",
           abs(rms_db(cued, 1.5, 2.5) - rms_db(plain, 1.5, 2.5)) < 0.5)
     lo_plain = samples(tmp / "plain.mp4", "lowpass=f=120,lowpass=f=120")
@@ -216,6 +275,7 @@ if __name__ == "__main__":
     test_presets()
     with tempfile.TemporaryDirectory() as t:
         test_synth(Path(t))
+        test_riser_gain(Path(t))
     if KEEP:
         Path(KEEP).mkdir(parents=True, exist_ok=True)
         test_mix(Path(KEEP))

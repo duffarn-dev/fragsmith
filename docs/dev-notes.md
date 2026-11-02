@@ -67,6 +67,7 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - **`aeval` time: use `n/s`, not `t`, to line up with `adelay`.** `t` follows the frame timestamps, while `adelay` counts samples. On a timeline with timestamp gaps or overlaps, the drop gap landed 50 ms late with `t`.
 - **`alimiter` has two defaults that bite in a mix.** `level=true` auto-gains the output, and the lookahead delays it unless `latency=true`. In a final mix, use `alimiter=limit=0.95:level=false:latency=true`, or the drop lands late and the level changes.
 - **`afade=curve=exp` over a long riser is inaudible until the very end.** It measured -107 dB at the start and -29 dB at 3 s of 4. `curve=qua` swells audibly the whole way.
+- **A fixed riser level overshoots a quiet build-up.** The bars before a drop are often the quietest part of a track. In a Suno track they were at -19 dB RMS, against -11 dB after the drop. A riser tuned on typical music ended 10 dB over the music, and it was heard as a loud sound on top of the track. The riser's gain now comes from the music under it, measured with `volumedetect`. To check a real film, compare its RMS with the music track's in 0.25 s windows, at the music offset from `report.md`.
 - **Measure one channel in tests, not a mono downmix.** `-ac 1` sums the channels at -3 dB each, so identical channels come out 3 dB louder, with peaks over 1.0. Use `pan=mono|c0=c0`.
 
 ## Timeline

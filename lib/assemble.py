@@ -6,6 +6,7 @@ Output: runs/<id>/final.mp4 + report.md.
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from lib.edit_engine import ENCODE_ARGS, LANDSCAPE, Frame, _climax_clip_id
 from lib.ffmpeg_util import (
     FONT_FILE,
     drawtext_escape,
+    mean_volume,
     probe_duration,
     probe_video_start,
     run_ffmpeg,
@@ -27,6 +29,12 @@ from lib.version import __version__
 # heard as a click, not as silence)
 DROP_RISER_MAX_S = 4.0
 DROP_GAP_MIN_S = 0.1
+# The riser's level follows the music under it: at this sfx_volume (hype's)
+# its last half second is as loud as the music, and sfx_volume moves it
+# from there (0.35: 2.2 dB under, 0.25: 5.1 dB under). A near-silent
+# build-up counts as the floor, so the riser is still heard
+RISER_MATCH_SFX_VOLUME = 0.45
+RISER_MUSIC_FLOOR_DB = -30.0
 
 
 def _card_source(
@@ -206,6 +214,23 @@ def drop_cue_times(cue: dict | None, cfg: dict) -> dict:
     if out:
         out["at"] = round(at, 3)
     return out
+
+
+def riser_gain(
+    riser: Path, music: Path, music_start: float, seconds: float, sfx_volume: float
+) -> float:
+    """The riser's volume, so it ends as loud as the music under it
+    (music_start..+seconds in the track, see RISER_MATCH_SFX_VOLUME). Never
+    louder than the old fixed sfx_volume x2.6. That was tuned on music at
+    -11 dB, and the build-up before a drop is often much quieter: at -19 dB
+    the riser ended 10 dB over the music."""
+    if sfx_volume <= 0:
+        return 0.0
+    music_db = max(RISER_MUSIC_FLOOR_DB, mean_volume(music, music_start, seconds))
+    tail = min(0.5, seconds)
+    riser_db = mean_volume(riser, probe_duration(riser) - tail, tail)
+    target = music_db + 20 * math.log10(sfx_volume / RISER_MATCH_SFX_VOLUME)
+    return min(sfx_volume * 2.6, 10 ** ((target - riser_db) / 20))
 
 
 def player_stats(
@@ -499,19 +524,21 @@ def assemble(
                 sfx_labels.append(f"[{name}d{i}]")
 
     # Drop cues. The riser is the last part of riser.wav, so it ends on its
-    # peak exactly where the gap (or the drop) starts. At sfx_volume 0.35 it
-    # ends about as loud as typical music (-11 dB RMS): at 1.6x it was only
-    # +4 dB over a quiet -18 dB test tone, so it would vanish under a real
-    # track
+    # peak exactly where the gap (or the drop) starts, as loud as the music
+    # under it there (riser_gain)
     if "riser" in cues:
         start, end = cues["riser"]
         file_s = probe_duration(sfx["riser"])
         length = min(end - start, file_s)
+        gain = riser_gain(
+            sfx["riser"], music_path, max(0.0, float(music_offset)) + end - length,
+            length, vol,
+        )
         idx = 2 + len(sfx_inputs)
         sfx_inputs.append(str(sfx["riser"]))
         sfx_chains.append(
             f"[{idx}:a]atrim=start={file_s - length:.3f},asetpts=PTS-STARTPTS,"
-            f"afade=t=in:d={length * 0.3:.3f},volume={vol * 2.6:.2f},"
+            f"afade=t=in:d={length * 0.3:.3f},volume={gain:.3f},"
             f"adelay=delays={int((end - length) * 1000)}:all=1[riser]"
         )
         sfx_labels.append("[riser]")
