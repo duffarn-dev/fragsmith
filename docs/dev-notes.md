@@ -68,6 +68,9 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 ## Timeline
 
 - Effects that add content at the **front** of the timeline (the cold open) must be counted into the beat-sync start position. Forgetting this put all beat sync ~0.75 s off with `intro_hook` on.
+- **Raw clips have no frames outside their window.** The render gets exactly `start_tick`..`end_tick`, so a transition can't borrow frames before a clip's first one. The incoming clip holds its first frame for the first half of the transition, hidden under the blend. The outgoing clip has real frames past the cut when the beat snap trimmed it, and holds its last frame when it didn't.
+- **A cut a hair before its beat snaps a whole beat early.** `nearest_beat_before` returns the previous beat when the timeline position is 6.4999 instead of 6.5, so one segment came out 0.5 s short. Two causes: `-t 5.867` rounds a frame up or down, and float sums of `d/2` drift. Segments with transitions are cut in whole frames (`trim=end_frame`, `-frames:v`, audio at 800 samples per frame), and the position on the timeline is rounded to 0.1 ms.
+- **xfade drops the last frame of its second input** when that input ends. Pad the second input past the length you want and cut the output with `-frames:v`.
 
 ## GitHub workflow
 

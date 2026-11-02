@@ -85,6 +85,7 @@ vignette = true          # darker corners
 beat_zoom = true         # pulse zoom that thumps on the beats
 beat_zoom_strength = 0.5 # 0.5 = subtle, 2.0 = aggressive (1.4 can feel "laggy")
 flash_transitions = true # white flash into clips (where the Director chose "cut")
+transitions = []         # on clip changes, taking turns: "whip", "zoom", "glitch" ([] = hard cuts)
 wobble = false           # off: beat-synced shaking can feel restless
 kill_zoom = true         # deep zoom into the crosshair on the last kill of each clip
 kill_zoom_factor = 1.7   # how far in (1.7 = 70%)

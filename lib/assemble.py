@@ -375,7 +375,10 @@ def assemble(
             if p.resolve() in seg_set:
                 seg_starts.append(pos)
             pos += d
-        whoosh_times = [max(0.0, s - 0.30) for s in seg_starts]
+        # the whoosh leads into the cut: the beat, the middle of a transition
+        cuts = [e.get("cut_at_s", 0.0) for e in cut_log or []]
+        cuts += [0.0] * (len(seg_starts) - len(cuts))
+        whoosh_times = [max(0.0, s + c - 0.30) for s, c in zip(seg_starts, cuts)]
         impact_events = [
             s + t
             for s, entry in zip(seg_starts, cut_log or [])

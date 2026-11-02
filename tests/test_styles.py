@@ -78,7 +78,8 @@ def test_apply() -> None:
                   not unknown, str(sorted(unknown)) if unknown else "")
         check(f"{name}: leaves enabled, lut and the quality switches alone",
               not {"enabled", "lut", "eased_ramps", "smooth_slowmo"} & set(preset.get("effects", {})))
-    looks = {name: tuple(sorted(p.get("effects", {}).items())) for name, p in STYLES.items()}
+    # repr: some values are lists (transitions), which a set can't hold
+    looks = {name: repr(sorted(p.get("effects", {}).items())) for name, p in STYLES.items()}
     check("the three presets are all different", len(set(looks.values())) == len(looks))
 
 

@@ -40,8 +40,11 @@ Principles for a good fragmovie:
   But: aces and big clutches (1v3+) should practically always be included.
 - Overlay text short and in gaming slang ("3K", "1v4 CLUTCH", "ACE") — no
   text at all on weaker clips.
-- transition_in: "cut" is the default; "fade" only into a change of tempo;
-  "speed_ramp" where the clip starts in the action.
+- transition_in: "cut" is the default (the style may put a transition there);
+  "fade" only into a change of tempo; "speed_ramp" where the clip starts in
+  the action. "whip" (a fast smeared pan), "zoom" (a push into the next clip)
+  or "glitch" pick a transition from the previous clip, centered on the beat,
+  when the style has transitions; vary them, and save "glitch" for big moments.
 - intro_text/outro_text: short and clean (e.g. player name + map, "GG" etc.).
 
 Effect control (optional, per clip):
