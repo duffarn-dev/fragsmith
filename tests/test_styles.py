@@ -3,12 +3,14 @@
 Covers: picking the style (--style, config, default), laying a preset over the
 config without touching anything else, preset keys that really exist in
 config.example.toml, what the presets change in the render (replay, high fps),
-old plans without a style, and the style line in report.md.
+old plans without a style, the style line in report.md, and that no preset
+names a key twice.
 
 Run: python tests/test_styles.py
 """
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 import tempfile
@@ -142,7 +144,22 @@ def test_report(tmp: Path) -> None:
     check("**Style:** hype", "**Style:** hype" in report.read_text(encoding="utf-8"))
 
 
+def test_no_duplicate_keys() -> None:
+    """A dict literal that names a key twice keeps the last one, silently.
+    Merging two PRs that both touched a preset nearly left an old one-line
+    "editing" after the full one, which would have dropped the riser."""
+    print("no key twice in a preset")
+    tree = ast.parse((ROOT / "lib" / "styles.py").read_text(encoding="utf-8"))
+    dupes = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            keys = [k.value for k in node.keys if isinstance(k, ast.Constant)]
+            dupes += sorted({k for k in keys if keys.count(k) > 1})
+    check("no dict in lib/styles.py names a key twice", not dupes, str(dupes))
+
+
 if __name__ == "__main__":
+    test_no_duplicate_keys()
     test_resolve()
     test_apply()
     test_render_side()
