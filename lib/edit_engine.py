@@ -576,7 +576,7 @@ def _xfade(kind: str, d: float) -> str:
     if kind == "zoom":
         return f"xfade=transition=zoomin:duration={d:.4f}:offset=0"
     return (f"xfade=transition=pixelize:duration={d:.4f}:offset=0,"
-            f"rgbashift=rh=-12:bh=12:{mid}")
+            f"chromashift=cbh=-12:crh=12:{mid}")
 
 
 SAMPLES_PER_FRAME = 800  # 48 kHz / 60 fps: audio cut on the same frame grid

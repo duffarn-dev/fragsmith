@@ -86,6 +86,15 @@ def gray(path: Path, t: float) -> bytes:
         capture_output=True, check=True).stdout
 
 
+def chroma(path: Path, t: float) -> bytes:
+    """The color planes (U and V) of a small frame at t."""
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-ss", f"{t:.4f}", "-frames:v", "1",
+         "-vf", "scale=320:180", "-f", "rawvideo", "-pix_fmt", "yuv444p", "-"],
+        capture_output=True, check=True).stdout
+    return raw[320 * 180:]
+
+
 def diff(a: bytes, b: bytes) -> float:
     return sum(abs(x - y) for x, y in zip(a, b)) / max(1, len(a))
 
@@ -206,6 +215,14 @@ def test_timeline(tmp: Path) -> None:
           [c.get("transition_in") for c in glitch_log] == [None, "glitch", "glitch"]
           and all(abs(a - c["timeline_end_s"]) <= FRAME + 1e-3
                   for a, c in zip(ends_off, glitch_log)))
+    # the color split must stay inside the transition: rgbashift converted
+    # the whole segment through RGB and lost color everywhere (dev-notes)
+    for kind, files, log_ in (("whip", on_files, on_log), ("glitch", glitch_files, glitch_log)):
+        at = 1.0 + log_[1]["cut_at_s"]
+        color = diff(chroma(off_files[1], 1.0), chroma(files[1], at))
+        # (encoding noise is ~0.15; the RGB round trip gave 0.7)
+        check(f"{kind}: the clip keeps its colors after the transition", color < 0.4,
+              f"{color:.2f}")
 
 
 def test_portrait_replay(tmp: Path) -> None:
