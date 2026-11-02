@@ -15,6 +15,7 @@ from lib.ffmpeg_util import (
     FONT_FILE,
     drawtext_escape,
     probe_duration,
+    probe_video_start,
     run_ffmpeg,
 )
 from lib.models import EditPlan
@@ -352,6 +353,8 @@ def assemble(
 
     total = probe_duration(timeline)
     final = run_dir / final_name
+    # the length the concat step gave each part (its format duration)
+    part_s = [probe_duration(p) for p in ordered]
 
     # SFX layer: whoosh into every clip change, impact on big kills (same
     # times as the impact split, from cut_log). Mixed below the music.
@@ -368,10 +371,10 @@ def assemble(
         seg_starts: list[float] = []
         pos = 0.0
         seg_set = {p.resolve() for p in segment_files}
-        for p in ordered:
+        for p, d in zip(ordered, part_s):
             if p.resolve() in seg_set:
                 seg_starts.append(pos)
-            pos += probe_duration(p)
+            pos += d
         whoosh_times = [max(0.0, s - 0.30) for s in seg_starts]
         impact_events = [
             s + t
@@ -396,6 +399,20 @@ def assemble(
                 )
                 sfx_labels.append(f"[{name}d{i}]")
 
+    # Game audio: each part's own audio, cut or padded to the part's length.
+    # Not the timeline's audio: the stream copy keeps every part's AAC
+    # priming and padding, so the game sound fell ~27 ms further behind the
+    # picture with every join (211 ms after 8 parts). Decoding each part on
+    # its own drops its priming, like a player does.
+    first_part = 2 + len(sfx_inputs)
+    game_chain = "".join(
+        f"[{first_part + k}:a]asetpts=PTS-STARTPTS,atrim=end={d:.6f},"
+        f"apad=whole_dur={d:.6f}[gp{k}];"
+        for k, d in enumerate(part_s)
+    ) + "".join(f"[gp{k}]" for k in range(len(part_s))) + (
+        f"concat=n={len(part_s)}:v=0:a=1,volume={game_vol}[game]"
+    )
+
     n_mix = 2 + len(sfx_labels)
     sfx_in = "".join(sfx_labels)
     # music_offset > 0 → the track starts partway in (so the drop hits the
@@ -418,7 +435,7 @@ def assemble(
         ratio = float(editing.get("sidechain_ratio", 8.0))
         release = float(editing.get("sidechain_release_ms", 300))
         mix = (
-            f"[0:a]volume={game_vol}[game];"
+            f"{game_chain};"
             f"{music_chain},asplit=2[m1][m2];"
             f"[game][m2]sidechaincompress=threshold={thr}:ratio={ratio}"
             f":attack=20:release={release}[gduck];"
@@ -427,20 +444,28 @@ def assemble(
         )
     else:
         mix = (
-            f"[0:a]volume={game_vol}[game];"
+            f"{game_chain};"
             f"{music_chain}[music];"
             f"[game][music]{sfx_in}amix=inputs={n_mix}"
             f":duration=first:normalize=0[amix]"
         )
     if sfx_chains:
         mix = ";".join(sfx_chains) + ";" + mix
+    # The concat step starts the picture ~21 ms in (the first part's AAC
+    # priming), so the audio starts there too instead of ahead of it
+    v_start = probe_video_start(timeline)
+    out_audio = "[amix]"
+    if v_start > 0:
+        mix += f";[amix]asetpts=PTS+{v_start:.6f}/TB[async]"
+        out_audio = "[async]"
     run_ffmpeg(
         [
             "-i", str(timeline),
             "-i", str(music_path),
             *[a for p in sfx_inputs for a in ("-i", p)],
+            *[a for p in ordered for a in ("-i", str(p))],
             "-filter_complex", mix,
-            "-map", "0:v", "-map", "[amix]",
+            "-map", "0:v", "-map", out_audio,
             "-c:v", "copy", "-c:a", "aac", "-b:a", "256k",
             str(final),
         ],

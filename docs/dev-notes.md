@@ -59,6 +59,9 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 
 - Synthesized sound must be peak-checked with `astats`. `volume=2.0` after `amix` clipped `impact.wav` into a square wave in 16-bit. Rule: always `alimiter=limit=0.95` as the last step of SFX synthesis, and check that the peak level is below -1 dB.
 - ffmpeg's `sine` source is quiet (~-18 dB), so "audible" needs a strong boost.
+- **A stream-copied concat of AAC parts drifts the audio.** Every part keeps its AAC priming (1024 samples) and its padding, but the video timestamps only follow each part's duration. The decoded audio ran ~27 ms ahead per join, so the game sound fell behind the picture: 211 ms after 8 parts in the test, and 140–230 ms in a real film before 2026-11-02. The mix doesn't use the timeline's audio. It decodes each part on its own (which drops its priming), cuts or pads it to the part's length, and joins them with the `concat` filter. `tests/test_audio_sync.py` checks it with a flash and a beep in every part.
+- **The concat step starts the picture ~21 ms in.** That's the first part's AAC priming. The mix starts the audio at the video's `start_time` (`asetpts=PTS+x/TB`), so it isn't ahead of the picture.
+- **Measure audio and video sync with a flash and a beep, not by ear.** Find the flash with `signalstats` (YAVG), and the beep by scanning the samples. Step through them 7 at a time, not 48: 48 samples is one period of a 1 kHz tone, so every probe can land on a zero crossing. For a real film, cross-correlate each part's own audio against the film, high-passed at 2 kHz so the music's bass doesn't win.
 
 ## Timeline
 
