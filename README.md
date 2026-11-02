@@ -18,7 +18,7 @@ Point Fragsmith at a `.dem` file. It finds your best rounds, renders them from y
 - **Picks the order like an editor would.** Strong opener, build-up, best clip last. Use the built-in rules for free, or let Claude direct the film.
 - **Cuts on the beat.** Every cut snaps to the music, and the climax lands on the track's bass drop.
 - **Real slow-mo.** Slow-motion clips are rendered at 120 fps, so they're smooth instead of stuttery.
-- **Effects that hit the kills.** Kill zoom, dutch tilt, headshot punch, freeze frame, kill counter, instant replay from the victim's POV, letterbox, color grade, film grain, whooshes and impacts with music ducking. Pick a style (`clean`, `hype`, `cinematic`) or turn each one on or off yourself: [docs/effects.md](docs/effects.md).
+- **Effects that hit the kills.** Kill zoom, dutch tilt, headshot punch, freeze frame, text and a kill counter that slam in, instant replay from the victim's POV, letterbox, color grade, film grain, whooshes and impacts with music ducking. Pick a style (`clean`, `hype`, `cinematic`) or turn each one on or off yourself: [docs/effects.md](docs/effects.md).
 - **Your own look.** Your images behind the intro and outro, your logo on the film, and a ready thumbnail of the climax kill.
 - **Shorts and TikTok too.** `finish --vertical` makes a 9:16 version of the same film from the same clips, with no extra render.
 - **You stay in control.** Fragsmith stops after the edit plan and shows what it will render and how long it'll take. Nothing renders until you say so. Every film comes with a `report.md` explaining the choices.

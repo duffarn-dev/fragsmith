@@ -48,6 +48,13 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - Portrait layout: `Frame.portrait` moves things out of the bands a Shorts/TikTok player covers (the bottom ~20 %: captions and buttons; the top ~8 %: the app bar). That means the lower third at 78 %, REPLAY at 12 % and the logo at the top. The logo width is a share of the frame's long side, so it's the same size in px in both films.
 - How the frame refactor was proven to change nothing: run `finish` on the same run before and after, then diff the `cmd:` lines in `ffmpeg.log`. They were byte-identical. Use the same check for any refactor of filter-building code.
 - Overlaying an RGBA png (the logo) lets ffmpeg pick `gbrp` for the output, and libx264 then encodes RGB that players show purple and green. Force `format=yuv420p` after the overlay and keep `-pix_fmt yuv420p`.
+- **Kinetic text is a `movie=` source inside the segment's filter graph,** not an extra `-i`. That way `_build_filter` and its callers keep their signatures, and a graph without text stays byte-identical:
+  - escape the path like the LUT's (`C\:/...`, in single quotes)
+  - place it with `setpts=PTS+start/TB`
+  - remove it at its end with `eof_action=pass`, or hold its last frame with `eof_action=repeat`
+  - then `format=yuv420p`, because of the RGBA overlay
+- **A fade-in hides a slam.** With a 0.05 s alpha ramp, the 1.9x frames of the kinetic slam were nearly transparent and only ~1.3x showed. The alpha now reaches full in 3 frames.
+- **Check a small overlay in a crop around it, not in the whole frame.** "3K" at 88 px is ~0.5 % of a 1080p frame, so a whole-frame difference stays under 0.5 with the text on.
 - A single-image overlay input (`-i logo.png`) stopped showing after the first part of a concat input. Loop it (`-loop 1 -i logo.png`) and end it with `overlay=...:shortest=1`.
 - Always loop it, even for one output frame: with an input seek that lands between two frames (19.056 s in a 120 fps clip), the first video frame has a pts above 0, the unlooped logo ends first, `shortest=1` ends the graph, and ffmpeg **exits 0 without writing the file**. Tests that seek onto an exact frame don't catch it. Check that the output exists.
 - `drawbox=c=black@0.35:t=fill` darkens in YUV, so it also pulls colors toward gray (yellow got a blue cast in the test). Pure red or blue test images have so little luma that "darkened" looks black; test with bright or gray images.
