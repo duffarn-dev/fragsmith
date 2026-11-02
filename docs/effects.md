@@ -19,12 +19,12 @@ preset = "hype"   # custom | clean | hype | cinematic
 |---|---|
 | `custom` | Your `[effects]` and `[editing]`, exactly as written. The default |
 | `clean` | Grade, vignette and beat cuts. No zooms, flashes, counters, replay or sound effects, and a lower intensity |
-| `hype` | Everything on and stronger: beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, counter, impact split, freeze, replay, louder sound effects |
-| `cinematic` | Letterbox, film grain, slow-mo push-ins, a gentle kill zoom, a long freeze and the replay. Nothing that shakes or flashes |
+| `hype` | Everything on and stronger: motion blur on the climax, beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, counter, impact split, freeze, replay, louder sound effects |
+| `cinematic` | Letterbox, film grain, motion blur on the climax, slow-mo push-ins, a gentle kill zoom, a long freeze and the replay. Nothing that shakes or flashes |
 
 - **Only some switches are set.** A preset sets only the switches it names (the full list is in `lib/styles.py`). Everything else keeps your value. That includes `enabled` (still the master switch), your `lut`, and the quality settings `eased_ramps` and `smooth_slowmo`.
 - **For one film:** `python main.py run <demo> --style cinematic` (also `batch --style`).
-- **The style is fixed when the edit plan is made.** It's stored in `02-edit-plan.json`, and `render` and `finish` use it, because the style decides which clips are rendered at 120 fps and whether the replay angle is rendered. `report.md` names it.
+- **The style is fixed when the edit plan is made.** It's stored in `02-edit-plan.json`, and `render` and `finish` use it, because the style decides which clips are rendered at 120 or 480 fps and whether the replay angle is rendered. `report.md` names it.
 - **Trying another style on clips you've already rendered:** change `"style"` in `02-edit-plan.json` and run `finish` again. Slow-mo on a clip that wasn't rendered at 120 fps falls back to interpolation. A replay that wasn't rendered uses your own POV instead of the victim's.
 
 ## Look
@@ -44,6 +44,7 @@ preset = "hype"   # custom | clean | hype | cinematic
 | Eased speed ramps | `[effects].eased_ramps` | Smooth transitions in and out of slow-mo instead of a hard jump |
 | Smooth slow-mo | `[effects].smooth_slowmo` | Optical-flow interpolation (ffmpeg `minterpolate`). Smoother, but encoding is ~5× slower on those segments. Skipped automatically for high-fps clips |
 | High-fps render | `[render].highfps_framerate` | Clips that will get slow-mo are rendered at 120 fps in CS2, giving real frames instead of interpolated ones. *Requires rendering.* 0 = off |
+| Motion blur | `[render].motion_blur`, `motion_blur_framerate`, `motion_blur_shutter` | Real motion blur, the biggest difference between game footage and footage that looks filmed. The clip is rendered at 480 fps, and each output frame blends the frames a 180° shutter would see (4 at normal speed, fewer in slow-mo, so slow-mo stays sharp). `"climax"` (the climax clip), `"all"` or `"off"`; the Claude Director can add it to a clip. *Costs ~40x the clip's length in render time (a 15 s climax: ~10 min) and ~8x the disk.* `run` shows the estimate. The 480 fps frames also give the clip's slow-mo, so it needs no 120 fps pass |
 | Freeze frame | `[effects].freeze_on_finish`, `freeze_seconds` | Short freeze on the final kill of an ace or 4k+ |
 | Headshot micro slow-mo | `[effects].headshot_micro_slowmo` | Brief 0.4× moment around a headshot punch |
 

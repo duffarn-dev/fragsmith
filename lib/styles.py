@@ -1,8 +1,8 @@
 """Style presets: one word for a tuned set of effects.
 
-A preset overrides only the keys it names in [effects]/[editing]; everything
-else keeps the user's value. "custom" overrides nothing, so the config is used
-exactly as written.
+A preset overrides only the keys it names in [effects]/[editing]/[render];
+everything else keeps the user's value. "custom" overrides nothing, so the
+config is used exactly as written.
 
 Left alone on purpose:
 - [effects].enabled stays the master switch (false still turns everything off)
@@ -73,6 +73,7 @@ STYLES: dict[str, dict[str, dict]] = {
             "instant_replay": True,
         },
         "editing": {"sfx": True, "sfx_volume": 0.45},
+        "render": {"motion_blur": "climax"},
     },
     # Film look: letterbox, grain, slow pushes, long freezes, the replay.
     # Nothing that shakes or flashes.
@@ -104,6 +105,7 @@ STYLES: dict[str, dict[str, dict]] = {
             "instant_replay": True,
         },
         "editing": {"sfx": True, "sfx_volume": 0.25},
+        "render": {"motion_blur": "climax"},
     },
 }
 

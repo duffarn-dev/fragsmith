@@ -41,10 +41,10 @@ It runs the real pipeline on a small scale, in the configured render mode:
 
 1. It reads the versions on this PC (Fragsmith, Python, ffmpeg, demoparser2, librosa).
 2. It takes the newest demo in `[selftest].demo_dir` (or `--demo`). The demo must be **fresh**: the header says which CS2 patch recorded it, and the selftest warns when that differs from the render PC's CS2.
-3. It parses the demo, and the rules Director picks two clips: the best one (usually slow-mo, so rendered at high fps) and a plain one, so both render passes run.
+3. It parses the demo, and the rules Director picks three clips: the best one (usually slow-mo, so rendered at high fps), a plain one, and 2 s around the best kill with motion blur (rendered at 480 fps), so all three render passes run.
 4. The render PC renders them. Each clip must have the right size and frame rate, and must not be black: a broken HLAE can "render" an empty picture.
 5. It reads the CS2, HLAE and CS Demo Manager versions from the render result.
-6. It edits the clips to a generated 120 BPM click track (steps 5–7) and checks `final.mp4`.
+6. It edits the clips to a generated 120 BPM click track (steps 5–7), checks `final.mp4`, and checks that the blur clip was blended (4 frames per frame at 480 fps).
 
 Every step prints OK, WARN or FAIL. The result ends with PASS or FAIL, and the details go to `runs/selftest-<time>/selftest-report.json`. After a PASS, the raw clips are deleted (`--keep` keeps them), and the test film stays. `--write-tested` records the versions in `compat/tested-versions.json`, but only after a PASS where every version was found.
 

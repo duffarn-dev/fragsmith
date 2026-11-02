@@ -123,6 +123,38 @@ def test_both_render_passes() -> None:
     check("after the fix: the opener at 60, the climax at 120",
           after.get("weak") == 60 and after.get("best") == 120, str(after))
 
+    print("and a short motion-blur clip")
+    cfg_blur, blur_id = st.add_motion_blur_clip(plan, chosen, cfg, 64)
+    by_id = {c.clip_id: c for c in chosen}
+    fps = st.expected_fps(plan, by_id, cfg_blur)
+    check("the blur clip opens the film",
+          [d.clip_id for d in sorted(plan.decisions, key=lambda d: d.order)]
+          == ["best_blur", "weak", "best"])
+    check("three render passes: 480, 60, 120",
+          (fps.get("best_blur"), fps.get("weak"), fps.get("best")) == (480, 60, 120), str(fps))
+    short = by_id.get("best_blur")
+    check("2 s around the best clip's last kill",
+          short is not None and short.duration_seconds == 2.0
+          and short.kills[0].tick == chosen[-1].kills[-1].tick
+          and short.kills[0].offset_s == 1.5,
+          str(short and (short.duration_seconds, short.kills[0].offset_s)))
+    check("motion blur is switched on only for the test",
+          cfg_blur["render"]["motion_blur"] == "climax" and "motion_blur" not in cfg["render"])
+    off_cfg = {**cfg, "render": {**cfg["render"], "motion_blur_framerate": 0}}
+    plan2 = run_rules_director(chosen[1:], {"demo_path": "x.dem"}, ["click.wav"], "pov")
+    check("no blur frame rate: no blur clip",
+          st.add_motion_blur_clip(plan2, list(chosen[1:]), off_cfg, 64) == (off_cfg, None))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        report = Path(tmp, "report.md")
+        report.write_text("# r\n\n## Cut log (beat sync)\n\n```json\n"
+                          + json.dumps([{"clip_id": "best_blur", "motion_blur_frames": 4}])
+                          + "\n```\n", encoding="utf-8")
+        check("the blend count is read from report.md",
+              st.blended_frames(report, "best_blur") == 4
+              and st.blended_frames(report, "weak") is None
+              and st.blended_frames(Path(tmp, "missing.md"), "x") is None)
+
 
 def test_media(tmp: Path) -> None:
     print("click track and clip checks")
