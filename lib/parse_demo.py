@@ -52,6 +52,27 @@ def _col(df, *candidates: str) -> str:
     )
 
 
+def kill_context(row) -> dict:
+    """Style details of a kill from the player_death event. Missing columns
+    (older demos/parsers) and NaN give False/0: bool(NaN) would be True."""
+
+    def num(key: str) -> float:
+        try:
+            v = float(row.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+        return 0.0 if math.isnan(v) else v
+
+    return {
+        "noscope": num("noscope") > 0,
+        "through_smoke": num("thrusmoke") > 0,
+        "wallbang": num("penetrated") > 0,  # number of surfaces penetrated
+        "jumpshot": num("attackerinair") > 0,
+        "blind": num("attackerblind") > 0,
+        "distance_m": round(num("distance"), 1),  # the CS2 event reports meters
+    }
+
+
 def _steamid(value) -> str:
     """Normalize a steamid (can be int/float/str, or NaN for world)."""
     if value is None:
@@ -166,6 +187,7 @@ def parse_demo_in_process(dem_path: str | Path) -> dict:
                 "victim_team": _team_name(row.get("user_team_num")),
                 "weapon": str(row.get(weapon_c) or ""),
                 "headshot": bool(row.get("headshot", False)),
+                **kill_context(row),
             }
         )
 

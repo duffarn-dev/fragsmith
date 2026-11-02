@@ -12,6 +12,15 @@ from lib.models import Highlight, KillMark
 
 SPECIAL_SINGLE_WEAPONS = {"knife", "knife_t", "bayonet", "taser", "zeus"}
 AWP_WEAPONS = {"awp"}
+LONG_SHOT_M = 35.0  # a kill from at least this far counts as a style point
+CONTEXT_FLAGS = ("noscope", "through_smoke", "wallbang", "jumpshot", "blind")
+
+
+def style_points(kill: dict) -> int:
+    """How many style details a kill has (noscope, wallbang, through smoke,
+    jumpshot, blind, long shot)."""
+    points = sum(1 for flag in CONTEXT_FLAGS if kill.get(flag))
+    return points + (1 if float(kill.get("distance_m") or 0) >= LONG_SHOT_M else 0)
 DEAGLE_WEAPONS = {"deagle", "revolver"}
 
 
@@ -177,6 +186,12 @@ def _clips_for_player(
                 headshot=k["headshot"],
                 victim_name=k["victim_name"],
                 victim_steamid=str(k.get("victim_steamid", "") or ""),
+                noscope=bool(k.get("noscope", False)),
+                through_smoke=bool(k.get("through_smoke", False)),
+                wallbang=bool(k.get("wallbang", False)),
+                jumpshot=bool(k.get("jumpshot", False)),
+                blind=bool(k.get("blind", False)),
+                distance_m=float(k.get("distance_m", 0.0) or 0.0),
             )
             for k in cluster
         ]
@@ -191,9 +206,14 @@ def _score_cluster(
     weapons = [k["weapon"].lower() for k in cluster]
     headshots = sum(1 for k in cluster if k["headshot"])
 
+    first = cluster[0]
     special_single = n == 1 and (
         weapons[0] in SPECIAL_SINGLE_WEAPONS
-        or (weapons[0] in AWP_WEAPONS and cluster[0]["headshot"])
+        or (weapons[0] in AWP_WEAPONS and first["headshot"])
+        # style kills worth a clip on their own; through smoke and wallbangs
+        # are common enough that they need a headshot too
+        or first.get("noscope") or first.get("jumpshot") or first.get("blind")
+        or (first["headshot"] and (first.get("wallbang") or first.get("through_smoke")))
     )
     # Single kills are only included if clutch or something special (knife/AWP hs)
     if n == 1 and not clutch_vs and not special_single:
@@ -209,6 +229,8 @@ def _score_cluster(
     score += 1.5 * sum(1 for w in weapons if w in SPECIAL_SINGLE_WEAPONS)
     score += min(1.5, 0.5 * sum(1 for w in weapons if w in AWP_WEAPONS))
     score += 0.3 * sum(1 for w in weapons if w in DEAGLE_WEAPONS)
+    # style points, capped so a wallbang 2K never beats a clean 4K
+    score += min(1.5, 0.5 * sum(style_points(k) for k in cluster))
 
     if n >= 3 and headshots / n >= 0.75:
         score += 0.5

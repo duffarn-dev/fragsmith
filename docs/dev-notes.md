@@ -9,6 +9,7 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - Valve matchmaking stores demos as `.dem.bz2`. `main.py` extracts them automatically and keeps the `.bz2`.
 - demoparser2 columns match the documentation on Valve MM demos (`attacker_`/`user_` prefixes, `total_rounds_played`, `is_warmup_period`, `team_num` 2=T / 3=CT).
 - Silent clutches (won without kills in the clutch phase, e.g. on time or defuse) used to flag earlier kills in the round as clutch kills. `detect_won_clutches` now returns `from_tick`, and only clips ending after it get the flag.
+- `player_death` has kill context columns: `noscope`, `thrusmoke`, `penetrated` (the number of surfaces, so >0 means a wallbang), `attackerinair`, `attackerblind` and `distance` (meters in CS2). Older demos or parsers can lack them, and pandas gives NaN for gaps: `bool(NaN)` is **True**, so read them through `kill_context()` in `parse_demo.py`, never with a bare `bool()`.
 
 ## CS Demo Manager CLI (csdm)
 
