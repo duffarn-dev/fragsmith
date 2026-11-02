@@ -181,4 +181,4 @@ if __name__ == "__main__":
     if FAILS:
         print(f"FAILED: {len(FAILS)} — {', '.join(FAILS)}")
         sys.exit(1)
-    print("All OK")
+    print("All hype score tests OK")
