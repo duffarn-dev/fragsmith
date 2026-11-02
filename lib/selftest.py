@@ -120,7 +120,7 @@ def first_clip_at_base_fps(plan) -> None:
 
 
 BLUR_CLIP_PRE_S = 1.5   # the motion-blur clip: this long before the kill...
-BLUR_CLIP_POST_S = 0.5  # ...and this long after (480 fps costs ~40x real time)
+BLUR_CLIP_POST_S = 0.5  # ...and this long after (480 fps costs ~11x real time)
 
 
 def add_motion_blur_clip(plan, chosen: list, cfg: dict, tickrate: int) -> tuple[dict, str | None]:

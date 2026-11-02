@@ -22,6 +22,7 @@ from lib.edit_engine import (  # noqa: E402
     _build_filter,
     blur_frames,
     clip_framerates,
+    raw_mb_per_min,
     render_cost,
     wants_motion_blur,
 )
@@ -124,10 +125,11 @@ def test_framerates() -> None:
 
 def test_cost() -> None:
     print("render time estimate")
-    check("60 fps: 2x", render_cost(60) == 2.0)
-    check("120 fps: 4x", render_cost(120) == 4.0)
-    check("480 fps: 40x (measured)", render_cost(480) == 40.0)
-    check("240 fps scales from 120: 8x", render_cost(240) == 8.0)
+    check("measured: 60 fps 1.6x, 120 fps 3.3x, 480 fps 11x",
+          (render_cost(60), render_cost(120), render_cost(480)) == (1.6, 3.3, 11.0))
+    check("240 fps scales from 120: 6.6x", abs(render_cost(240) - 6.6) < 1e-9)
+    check("below 60 scales down from 60", abs(render_cost(30) - 0.8) < 1e-9)
+    check("disk: 480 fps ~4x a 60 fps clip", 4.0 <= raw_mb_per_min(480) / raw_mb_per_min(60) <= 4.5)
 
 
 def test_graph() -> None:

@@ -31,6 +31,9 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - Microsoft Store Python shows up as `python3.12.exe` in the process list, so `taskkill /IM python.exe` misses it.
 - A job that failed used to stay in `working/`, and the worker re-queues `working/` on start (meant for crashes). Restarting the worker therefore re-rendered a job that had failed (seen in the M7 selftest: it failed because the CS Demo Manager app was open, then rendered after the restart). Failed jobs now go to `failed/`.
 - A running worker doesn't load new code. Restart it after changing `worker.py` and check `worker.log` for a "worker started" line with the right timestamp.
+- **Render cost, measured on six passes (2026-11-02, 1080p):** the footage's length ×1.6 at 60 fps, ×3.3 at 120, ×11 at 480, plus ~30 s per CS2 launch (one per frame rate) and ~30 s per job. The raw clips take ~130, 165 and 550 MB per minute. An early spike said 480 fps cost 40x, but its 3 s clip was mostly CS2's launch: the first estimate said 15 min for a film that rendered in 5.6. `worker.log` has a timestamp per pass, so check new numbers there.
+- **The replay's victim angle shares its clip's frame rate**, because csdm renders one rate per pass. A climax with motion blur and the replay therefore renders 480 fps twice (the estimate counts it).
+- **The frame rate per clip was decided in three places** (the render job, `run`'s estimate and the selftest), each with a copy of the same rule. `edit_engine.clip_framerates` is now the only one.
 
 ## ffmpeg filter graphs
 
@@ -40,6 +43,7 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 - An empty filter chain (`[vc][vout]`) is invalid in `filter_complex`. With all effects off it must fall back to the `null` filter.
 - On very long clips (80 s, 27 concat parts) content drifts ~0.5 s from accumulated frame rounding. The effects drift with it, so the film looks right, but the tail is trimmed. Negligible on normal clips (8–20 s); verify effect placement visually on clips longer than ~40 s.
 - `rgbashift` forces YUV→RGB→YUV on the **whole** stream (format negotiation ignores `enable`) and loses color everywhere. Use `chromashift` (native yuv420p) for channel-shift effects.
+- **Motion blur is blended before `fps=60`:** `tmix` averages neighboring source frames, then `fps` keeps one per 1/60 s. After `fps=60` the frames in between are gone. Everything drawn later (text, zooms) stays sharp, as it should.
 - In `drawbox` expressions, `t` means **thickness**, not time. Time-animated position needs `overlay` with `t` in the x/y expressions.
 - Verify animations with `signalstats`/YAVG per frame, not by looking at a single frame.
 - The output size comes from a `Frame` (`lib/edit_engine.py`: `LANDSCAPE` 1920x1080 fit+pad, `PORTRAIT` 1080x1920 center crop) passed through the engine, cards and cold open. Don't write a size into a filter string; use `frame.size`, `frame.normalize()` or `frame.w`/`frame.h`.

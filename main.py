@@ -232,7 +232,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
 
     # --- PHASE STOP: show edit plan + estimates, wait for approval ---------
-    from lib.edit_engine import clip_framerates, render_cost, wants_motion_blur
+    from lib.edit_engine import (
+        RENDER_JOB_S,
+        RENDER_PASS_S,
+        clip_framerates,
+        raw_mb_per_min,
+        render_cost,
+        wants_motion_blur,
+    )
 
     by_id = {c.clip_id: c for c in candidates}
     chosen = sorted(plan.decisions, key=lambda d: d.order)
@@ -243,21 +250,20 @@ def cmd_run(args: argparse.Namespace) -> int:
     fps_by_clip = clip_framerates(plan, by_id, cfg)
     blur_ids = {d.clip_id for d in chosen if wants_motion_blur(d, plan, cfg)}
 
-    # Rough estimates: render time per frame rate (measured, see
-    # RENDER_COST, the replay's victim POV included) + ~2 min per CS2 launch,
-    # one launch per frame rate; raw clips ~40 MB/min at 1080p60, more frames
-    # take more room.
+    # Estimates from measured rates (see RENDER_COST): render time per frame
+    # rate, the replay's victim POV included, + a CS2 launch per frame rate;
+    # the raw clips' size per minute at each rate.
     def clip_sec(cid: str) -> float:
         return by_id[cid.removesuffix("_alt")].duration_seconds
 
     passes = len(set(fps_by_clip.values()))
     est_render_min = (
         sum(clip_sec(cid) * render_cost(f) for cid, f in fps_by_clip.items())
-        + 120 * passes
+        + RENDER_PASS_S * passes + RENDER_JOB_S
     ) / 60
     est_disk_mb = sum(
-        clip_sec(cid) * f / base_fps for cid, f in fps_by_clip.items()
-    ) / 60 * 40
+        clip_sec(cid) / 60 * raw_mb_per_min(f) for cid, f in fps_by_clip.items()
+    )
 
     print()
     print("=" * 64)

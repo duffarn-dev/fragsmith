@@ -850,15 +850,28 @@ def clip_framerates(plan: EditPlan, candidates_by_id: dict, cfg: dict) -> dict[s
     return fps
 
 
-# Render time as a multiple of the clip's length, measured on the render PC
-# (1080p): 60 fps ~2x, 120 fps ~4x, 480 fps ~40x (3 s took 2 min). Other
-# rates scale from the nearest one below.
-RENDER_COST = {60: 2.0, 120: 4.0, 480: 40.0}
+# Measured on the render PC (1080p, six passes on 2026-11-02): render time
+# as a multiple of the footage's length, plus ~30 s per CS2 launch (one per
+# frame rate) and ~30 s per job; and the raw clips' size per minute. Other
+# rates scale from the nearest one below. (An early spike said 40x at 480
+# fps: its 3 s clip was mostly the CS2 launch.)
+RENDER_COST = {60: 1.6, 120: 3.3, 480: 11.0}
+RENDER_PASS_S = 30
+RENDER_JOB_S = 30
+RAW_MB_PER_MIN = {60: 130, 120: 165, 480: 550}
+
+
+def _per_fps(table: dict[int, float], fps: int) -> float:
+    known = max((f for f in table if f <= fps), default=min(table))
+    return table[known] * fps / known
 
 
 def render_cost(fps: int) -> float:
-    known = max((f for f in RENDER_COST if f <= fps), default=60)
-    return RENDER_COST[known] * fps / known
+    return _per_fps(RENDER_COST, fps)
+
+
+def raw_mb_per_min(fps: int) -> float:
+    return _per_fps(RAW_MB_PER_MIN, fps)
 
 
 def _simulate_timeline(
