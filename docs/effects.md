@@ -19,7 +19,7 @@ preset = "hype"   # custom | clean | hype | cinematic
 |---|---|
 | `custom` | Your `[effects]` and `[editing]`, exactly as written. The default |
 | `clean` | Grade, vignette and beat cuts. No zooms, flashes, counters, replay or sound effects, and a lower intensity |
-| `hype` | Everything on and stronger: beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, counter, impact split, freeze, replay, louder sound effects |
+| `hype` | Everything on and stronger: beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, kinetic text and counter, impact split, freeze, replay, louder sound effects |
 | `cinematic` | Letterbox, film grain, slow-mo push-ins, a gentle kill zoom, a long freeze and the replay. Nothing that shakes or flashes |
 
 - **Only some switches are set.** A preset sets only the switches it names (the full list is in `lib/styles.py`). Everything else keeps your value. That includes `enabled` (still the master switch), your `lut`, and the quality settings `eased_ramps` and `smooth_slowmo`.
@@ -67,6 +67,9 @@ preset = "hype"   # custom | clean | hype | cinematic
 | Kill counter | `[effects].kill_counter` | Counter ticking 1 → 2 → 3 → 4K / ACE on each kill, for clips with 3+ kills |
 | Lower third | `[effects].lowerthird` | Small context line bottom-left: map · round · 1vX |
 | Animated overlays | `[effects].animated_overlays` | Overlay text slides up and fades instead of popping on and off |
+| Kinetic text | `[effects].kinetic_text` | The overlay text and the kill counter slam in from 1.9× with an overshoot and an amber glow. The overlay text spreads out as it fades. Each new count cuts the last one, and the final count stays to the end of the clip. Replaces `animated_overlays` for that text |
+
+Kinetic text is drawn with Pillow (in `requirements.txt`). Without Pillow, the text is drawn plainly, `report.md` says so, and `doctor` warns. Each text is drawn once and kept in `04-segments/kinetic/`, so the 9:16 film and a second `finish` reuse it.
 
 ## Structure
 
