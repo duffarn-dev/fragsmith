@@ -18,6 +18,7 @@ from lib.ffmpeg_util import (
     probe_video_start,
     run_ffmpeg,
 )
+from lib.hype_score import counts_as_kill, teamkill_note, teamkills_by
 from lib.models import EditPlan
 from lib.version import __version__
 
@@ -122,8 +123,7 @@ def player_stats(
     all_kills = events.get("kills", [])
     kills = [
         k for k in all_kills
-        if k.get("attacker_steamid") == pov_steamid
-        and k.get("victim_steamid") != pov_steamid
+        if k.get("attacker_steamid") == pov_steamid and counts_as_kill(k)
     ]
     if not kills:
         return None
@@ -566,6 +566,9 @@ def write_report(
             cand = candidates_by_id.get(cid)
             score = f" (hype {cand.hype_score})" if cand else ""
             lines.append(f"- {cid}{score}")
+    teamkills = teamkills_by(events or {}, getattr(any_cand, "player_steamid", ""))
+    if teamkills:
+        flags = [*flags, teamkill_note(teamkills)]
     if flags:
         lines += ["", "## Flags", ""]
         lines += [f"- {f}" for f in flags]
