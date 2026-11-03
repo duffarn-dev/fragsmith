@@ -479,8 +479,9 @@ def assemble(
     # the length the concat step gave each part (its format duration)
     part_s = [probe_duration(p) for p in ordered]
 
-    # SFX layer: whoosh into every clip change, impact on big kills (same
-    # times as the impact split, from cut_log). Mixed below the music.
+    # SFX layer: impact on big kills (same times as the impact split, from
+    # cut_log), and with [editing].whoosh a whoosh into every clip change.
+    # Mixed below the music.
     sfx_inputs: list[str] = []
     sfx_chains: list[str] = []
     sfx_labels: list[str] = []
@@ -509,7 +510,8 @@ def assemble(
             for t in entry.get("sfx_impact_times_s", [])
         ]
         for name, times, gain in (
-            ("whoosh", whoosh_times, vol),
+            # off by default: on every cut it was heard on top of the music
+            ("whoosh", whoosh_times if editing.get("whoosh", False) else [], vol),
             ("impact", impact_events, vol * 1.3),
         ):
             if not times:

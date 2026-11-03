@@ -255,14 +255,31 @@ def test_mix(tmp: Path) -> None:
     clean = film("clean.mp4", apply_style({"editing": dict(ALL_ON)}, "clean")["editing"])
     check("the clean style has no cues", rms_db(clean, 6.93, 6.97) > -30)
 
+    # a clip change at 5.0: the whoosh would run 4.7-5.3. Above 2 kHz the
+    # 440 Hz music is gone, so the whoosh is all that's left
+    sfx_only = film("sfx.mp4", {"sfx": True})
+    check("sfx alone adds no whoosh on a clip change",
+          abs(rms_db(sfx_only, 4.75, 5.25) - rms_db(plain, 4.75, 5.25)) < 0.5)
+    hi_sfx = samples(tmp / "sfx.mp4", "highpass=f=2000,highpass=f=2000")
+    film("whoosh.mp4", {"sfx": True, "whoosh": True})
+    hi_whoosh = samples(tmp / "whoosh.mp4", "highpass=f=2000,highpass=f=2000")
+    lift = rms_db(hi_whoosh, 4.75, 5.25) - rms_db(hi_sfx, 4.75, 5.25)
+    check("whoosh = true adds it (20 dB or more above 2 kHz)", lift >= 20, f"+{lift:.1f} dB")
+
 
 def test_presets() -> None:
     print("presets")
-    for style, want in (("hype", (True, True, True)), ("cinematic", (True, True, False)),
+    # no style turns on a sound on the transitions: the riser and the whoosh
+    # are yours to turn on, and a style leaves them as you set them
+    for style, want in (("hype", (None, True, True)), ("cinematic", (None, True, False)),
                         ("clean", (False, False, False))):
         e = apply_style({}, style)["editing"]
         got = (e.get("riser"), e.get("drop_gap"), e.get("drop_boom"))
         check(f"{style}: riser/gap/boom = {want}", got == want, str(got))
+    for style in ("hype", "cinematic"):
+        e = apply_style({"editing": {"riser": True, "whoosh": True}}, style)["editing"]
+        check(f"{style}: your riser and whoosh stay on",
+              (e.get("riser"), e.get("whoosh")) == (True, True), str(e))
     check("custom changes nothing", "riser" not in apply_style({}, "custom").get("editing", {}))
 
 
