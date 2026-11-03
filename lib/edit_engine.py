@@ -870,6 +870,52 @@ def outro_seconds(cfg: dict) -> float:
 DROP_INTRO_MIN_S = 1.5
 DROP_INTRO_EXTRA_MAX_S = 4.0
 DROP_CONVERGED_S = 0.02
+DROP_SOLVE_STEPS = 12
+# A drop is hit when the climax starts this close to it. Not the beat
+# tolerance: a whole beat (0.6 s at 100 BPM) is inside that, and a climax
+# a beat late puts the gap and the boom on the clip before it
+DROP_MAX_ERROR_S = 0.1
+
+
+def _solve_drop(
+    err_at, x: float, lo: float | None = None, hi: float | None = None
+) -> float | None:
+    """The lever value x (intro length or music offset) that puts the
+    climax start on the drop. err_at(x) is the drop's timeline position
+    minus the climax start (None if the climax can't be placed); it only
+    falls as x grows. The cuts snap to the beat grid, so the error moves a
+    whole beat at a time: a plain step of x += error can jump past the drop
+    beat and back. Once the error has had both signs, bisect between them,
+    which finds the drop beat if any x reaches it. It may not: the cut into
+    the climax snaps from where the clip before it snapped, so it can skip
+    a beat (seen at 99 BPM: from 604 ms early straight to 581 ms late).
+    Returns the x with the smallest error seen, None if none could be."""
+    best: tuple[float, float] | None = None  # (x, error)
+    below = above = None  # largest x with the error > 0, smallest with < 0
+    for _ in range(DROP_SOLVE_STEPS):
+        err = err_at(x)
+        if err is None:
+            break
+        if best is None or abs(err) < abs(best[1]):
+            best = (x, err)
+        if abs(err) <= DROP_CONVERGED_S:
+            break
+        if err > 0:
+            below = x if below is None else max(below, x)
+        else:
+            above = x if above is None else min(above, x)
+        if below is not None and above is not None:
+            nxt = (below + above) / 2
+        else:
+            nxt = x + err
+        if lo is not None:
+            nxt = max(lo, nxt)
+        if hi is not None:
+            nxt = min(hi, nxt)
+        if abs(nxt - x) < 0.005:
+            break
+        x = nxt
+    return None if best is None else best[0]
 
 
 def plan_drop_sync(
@@ -931,36 +977,25 @@ def plan_drop_sync(
         drop_t = float(drop["time_s"])
         r = drop_t - c0
 
+        def intro_err(intro: float) -> float | None:
+            c = climax_start(beats, intro)
+            return None if c is None else drop_t - c
+
+        def offset_err(off: float) -> float | None:
+            c = climax_start(shift_beats(beats, off), base_intro)
+            return None if c is None else (drop_t - off) - c
+
         # Lever 1: intro adjustment, the drop is close to the natural climax
         if lo - base_intro - tolerance <= r <= hi - base_intro + tolerance:
-            intro = min(hi, max(lo, base_intro + r))
-            for _ in range(6):
-                c = climax_start(beats, intro)
-                if c is None:
-                    break
-                err = drop_t - c
-                if abs(err) <= DROP_CONVERGED_S:
-                    break
-                new_intro = min(hi, max(lo, intro + err))
-                if abs(new_intro - intro) < 0.005:
-                    break
-                intro = new_intro
-            c = climax_start(beats, intro)
-            if c is not None and abs(c - drop_t) <= tolerance:
+            intro = _solve_drop(intro_err, min(hi, max(lo, base_intro + r)), lo, hi)
+            c = None if intro is None else climax_start(beats, intro)
+            if c is not None and abs(c - drop_t) <= DROP_MAX_ERROR_S:
                 return result(beats, intro, 0.0, "intro", drop_t, c - drop_t)
 
         # Lever 2: music offset, the drop is far INTO the track
         if r > 0:
-            off = r
-            for _ in range(6):
-                c = climax_start(shift_beats(beats, off), base_intro)
-                if c is None or off <= 0:
-                    break
-                err = (drop_t - off) - c
-                if abs(err) <= DROP_CONVERGED_S:
-                    break
-                off += err
-            if off > 0:
+            off = _solve_drop(offset_err, r, lo=0.0)
+            if off is not None and off > 0:
                 shifted = shift_beats(beats, off)
                 c = climax_start(shifted, base_intro)
                 # the rest of the track must cover the whole film, or the
@@ -973,7 +1008,7 @@ def plan_drop_sync(
                 music_left = float(beats.get("duration_seconds", 0.0)) - off
                 if (
                     c is not None
-                    and abs(c - (drop_t - off)) <= tolerance
+                    and abs(c - (drop_t - off)) <= DROP_MAX_ERROR_S
                     and music_left >= film_end
                 ):
                     return result(
