@@ -357,6 +357,50 @@ def _headshot_punch_filter(
     )
 
 
+# Impact shake: the picture zooms in this much while it shakes, so it can
+# move without showing an edge, and settles in SHAKE_S
+SHAKE_ZOOM = 0.04
+SHAKE_S = 0.35
+
+
+def _shake_filter(times: list[float], effects: dict, frame: Frame = LANDSCAPE) -> str:
+    """A short, dying shake on each big kill: one zoompan where every shake
+    is 0 outside its window, so the rest of the clip is untouched. The
+    swing stays inside the zoom's margin. Times are in output time."""
+    tv = "on/60"
+    k = max(0.0, float(effects.get("intensity", 1.0)))
+    strength = max(0.0, float(effects.get("impact_shake_strength", 1.0))) * k
+    # the margin on each side is iw*(1-1/zoom)/2: ~0.019 of the width at 1.04x
+    amp = min(0.018, 0.011 * strength)
+    envs = [
+        f"if(between({tv},{t:.3f},{t + SHAKE_S:.3f}),exp(-({tv}-{t:.3f})/0.12),0)"
+        for t in times
+    ]
+    phases = [(t, e) for t, e in zip(times, envs)]
+    w = "+".join(envs)
+    dx = "+".join(f"({e})*sin(6.2832*23*({tv}-{t:.3f}))" for t, e in phases)
+    dy = "+".join(f"({e})*cos(6.2832*17*({tv}-{t:.3f}))" for t, e in phases)
+    return (
+        f"zoompan=z='1+{SHAKE_ZOOM}*min(1,{w})'"
+        f":x='iw/2-(iw/zoom/2)+iw*{amp:.4f}*({dx})'"
+        f":y='ih/2-(ih/zoom/2)+ih*{amp * 0.7:.4f}*({dy})'"
+        f":d=1:fps=60:s={frame.size}"
+    )
+
+
+def _glow_chain(src: str, out: str, effects: dict) -> str:
+    """Bloom: the bright parts, blurred, laid over the picture with screen.
+    Only the brightness: screen on the color planes would tint the image."""
+    k = max(0.0, float(effects.get("intensity", 1.0)))
+    amount = min(1.0, max(0.0, float(effects.get("glow", 0.0))) * k)
+    return (
+        f"{src}split[gb][gs];"
+        f"[gs]lutyuv=y='clip((val-150)*2.4,0,255)',gblur=sigma=22:planes=1[gl];"
+        f"[gb][gl]blend=c0_mode=screen:c0_opacity={0.55 * amount:.3f}"
+        f":c1_mode=normal:c1_opacity=0:c2_mode=normal:c2_opacity=0{out}"
+    )
+
+
 def _build_filter(
     parts: list[tuple[float, float, float]],
     decision: EditDecision,
@@ -376,6 +420,7 @@ def _build_filter(
     kinetic_dir: Path | None = None,
     log_path: Path | None = None,
     blur_shutter: float | None = None,
+    shakes: list[float] | None = None,
 ) -> tuple[str, str, str]:
     """filter_complex: trim/setpts/atempo per part + concat + effects +
     overlay + entry transition. src_fps: the source frame rate; high-fps
@@ -478,6 +523,10 @@ def _build_filter(
         shift = max(2, round(5 * k))
         cond = "+".join(f"between(t,{t:.3f},{t + 0.05:.3f})" for t in impacts)
         vf.append(f"chromashift=cbh=-{shift}:crh={shift}:enable='{cond}'")
+    if shakes:
+        # after the punches and the split, so they shake along; before the
+        # text, which stays still
+        vf.append(_shake_filter(shakes, effects, frame))
     # kinetic text clips laid over the picture after the effects:
     # (clip, start, x, y, hold the last frame)
     layers: list[tuple[Path, float, int, int, bool]] = []
@@ -591,12 +640,17 @@ def _build_filter(
         # bar (920).
         slide = "min(160,160*t/0.4)"
     after_fx = "[vfx]" if letterbox else "[vout]"
+    # the glow goes on before the grade, like light blooming in the lens
+    src = "[vc]"
+    if effects.get("enabled", True) and float(effects.get("glow", 0.0) or 0.0) > 0:
+        chains.append(_glow_chain("[vc]", "[vglow]", effects))
+        src = "[vglow]"
     if layers:
         # Kinetic text goes on after the effects (it shouldn't zoom, tilt or
         # split along) and under the letterbox bar, like the drawtext did.
         # setpts places each clip at its start; eof_action=pass removes it
         # when it ends, repeat holds its last frame.
-        chains.append(f"[vc]{','.join(vf)}[vk0]")
+        chains.append(f"{src}{','.join(vf)}[vk0]")
         for i, (clip, start, x, y, hold) in enumerate(layers):
             last = i + 1 == len(layers)
             out = f"{after_fx[:-1]}t]" if last else f"[vk{i + 1}]"
@@ -608,7 +662,7 @@ def _build_filter(
         # the overlay can hand on an RGB format (the logo's gbrp trap)
         chains.append(f"{after_fx[:-1]}t]format=yuv420p{after_fx}")
     else:
-        chains.append(f"[vc]{','.join(vf)}{after_fx}")
+        chains.append(f"{src}{','.join(vf)}{after_fx}")
     if letterbox:
         chains.append(f"color=black:s={frame.w}x160:r=60[lbb]")
         chains.append(f"[vfx][lbb]overlay=x=0:y='{frame.h}-{slide}'[vout]")
@@ -1559,6 +1613,12 @@ def build_segments(
             and choose("impact_split", True)
             else None
         )
+        shakes = (
+            impact_times
+            if fx_on and fx.get("impact_shake", False) and impact_times
+            and choose("impact_shake", True)
+            else None
+        )
 
         src_fps = probe_fps(clip_path)
         blur_shutter = (
@@ -1578,6 +1638,7 @@ def build_segments(
             src_fps=src_fps,  # high-fps source → real slow-mo
             frame=frame, tags=tags, kinetic_dir=kinetic_dir, log_path=log_path,
             blur_shutter=blur_shutter,
+            shakes=shakes,
         )
         out_path = segments_dir / f"{decision.order:02d}_{decision.clip_id}.mp4"
         tail_path = segments_dir / f"{decision.order:02d}_{decision.clip_id}_tail.mkv"
