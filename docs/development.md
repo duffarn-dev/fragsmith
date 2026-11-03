@@ -126,7 +126,7 @@ New issues go through the forms in `.github/ISSUE_TEMPLATE/` (bug report, featur
 
 ## Releases
 
-Releases happen on a fixed day (Friday), but only when there's something finished on `develop`. If nothing is finished, there's no release. The release is a PR from `develop` to `main`, merged with a merge commit. The `release` workflow then tags `main` and publishes the release notes. The full checklist is in [releasing.md](releasing.md).
+Releases happen on a fixed day (Wednesday), but only when there's something finished on `develop`. If nothing is finished, there's no release. The release is a PR from `develop` to `main`, merged with a merge commit. The `release` workflow then tags `main` and publishes the release notes. The full checklist is in [releasing.md](releasing.md).
 
 ## Hotfixes
 
