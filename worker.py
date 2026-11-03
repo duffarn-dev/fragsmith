@@ -12,6 +12,10 @@ Picks up jobs from <job_dir>/inbox/ and, per job:
   2. csdm video --config-file  (HLAE + FFmpeg; ALL clips in one CS2 launch)
   3. Renames the output files to <clip_id>.mp4 in <job_dir>/outbox/<run_id>/
 
+A job that fails goes to <job_dir>/failed/ with its result in outbox/. Jobs
+left in working/ (the worker crashed or was closed mid-render) are re-queued
+when the worker starts.
+
 IMPORTANT:
 - The PC must be logged in with a desktop session — CS2 launches and is in
   use during rendering. Don't touch the machine while it runs.
@@ -52,6 +56,84 @@ def csdm_app_running() -> bool:
             return True
     except OSError:
         return False
+
+
+def find_cs2() -> Path | None:
+    """CS2's install folder via Steam's library list (Windows only)."""
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
+            steam = Path(winreg.QueryValueEx(key, "SteamPath")[0])
+    except (ImportError, OSError):
+        return None
+    libraries = [steam]
+    vdf = steam / "steamapps" / "libraryfolders.vdf"
+    if vdf.exists():
+        text = vdf.read_text(encoding="utf-8", errors="replace")
+        libraries += [
+            Path(p.replace("\\\\", "\\"))
+            for p in re.findall(r'"path"\s+"([^"]+)"', text)
+        ]
+    for lib in libraries:
+        if (lib / "steamapps" / "appmanifest_730.acf").exists():
+            return lib / "steamapps" / "common" / "Counter-Strike Global Offensive"
+    return None
+
+
+def read_steam_inf(cs2_dir: Path) -> dict[str, str]:
+    """game/csgo/steam.inf as a dict: PatchVersion (1.41.9.4, the number Steam
+    and demo headers use), ClientVersion, VersionDate ..."""
+    inf = cs2_dir / "game" / "csgo" / "steam.inf"
+    if not inf.exists():
+        return {}
+    pairs = (line.split("=", 1) for line in inf.read_text(errors="replace").splitlines() if "=" in line)
+    return {k.strip(): v.strip() for k, v in pairs}
+
+
+def file_version(path: Path) -> str | None:
+    """The Windows file version of an .exe ("2.192.10.0"), or None."""
+    if os.name != "nt" or not path.exists():
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    api = ctypes.WinDLL("version")
+    size = api.GetFileVersionInfoSizeW(str(path), None)
+    if not size:
+        return None
+    buf = ctypes.create_string_buffer(size)
+    if not api.GetFileVersionInfoW(str(path), 0, size, buf):
+        return None
+    ptr, length = ctypes.c_void_p(), wintypes.UINT()
+    if not api.VerQueryValueW(buf, "\\", ctypes.byref(ptr), ctypes.byref(length)):
+        return None
+    # VS_FIXEDFILEINFO: signature, struct version, file version MS, file version LS
+    info = ctypes.cast(ptr, ctypes.POINTER(ctypes.c_uint32 * 4)).contents
+    ms, ls = info[2], info[3]
+    return f"{ms >> 16}.{ms & 0xFFFF}.{ls >> 16}.{ls & 0xFFFF}"
+
+
+def detect_versions(csdm: Path) -> dict:
+    """CS2, HLAE and CS Demo Manager on this PC (None when not found). Goes
+    into every render result, so `main.py selftest` can compare them with
+    compat/tested-versions.json, whichever PC renders."""
+    def three(v: str | None) -> str | None:  # "2.192.10.0" → "2.192.10"
+        return ".".join(v.split(".")[:3]) if v else None
+
+    versions: dict = {"cs2": None, "cs2_client": None, "cs2_date": None,
+                      "hlae": None, "cs_demo_manager": None}
+    try:
+        cs2 = find_cs2()
+        inf = read_steam_inf(cs2) if cs2 else {}
+        versions.update(cs2=inf.get("PatchVersion"), cs2_client=inf.get("ClientVersion"),
+                        cs2_date=inf.get("VersionDate"))
+        hlae = Path(os.environ.get("USERPROFILE", "")) / ".csdm" / "hlae" / "HLAE.exe"
+        versions["hlae"] = three(file_version(hlae))
+        versions["cs_demo_manager"] = three(file_version(csdm.parent / "cs-demo-manager.exe"))
+    except Exception as exc:  # noqa: BLE001 — versions are a nice-to-have, never a failure
+        versions["error"] = str(exc)
+    return versions
 
 
 def log(msg: str, job_dir: Path | None = None) -> None:
@@ -210,7 +292,8 @@ def render_job(
     one-PC mode. Raises RuntimeError when csdm fails outright.
     """
     run_id = job["run_id"]
-    result: dict = {"run_id": run_id, "status": "failed", "warnings": [], "clips": {}}
+    result: dict = {"run_id": run_id, "status": "failed", "warnings": [], "clips": {},
+                    "versions": detect_versions(csdm)}
     if not demo_path.exists():
         raise RuntimeError(f"Demo file missing: {demo_path}")
 
@@ -247,8 +330,8 @@ def render_job(
             hint = ""
             if "hlae" in output.lower():
                 hint = (
-                    " (HLAE-related? Game updates break HLAE — "
-                    "update CS Demo Manager and try again.)"
+                    " (HLAE-related? Game updates break HLAE — update it in "
+                    "CS Demo Manager → Settings → Video and try again.)"
                 )
             raise RuntimeError(
                 f"csdm video failed in pass {i}/{len(configs)} "
@@ -329,7 +412,14 @@ def process_job(job_path: Path, job_dir: Path, csdm: Path) -> bool:
 
     except Exception as exc:  # noqa: BLE001 — everything goes into the result file
         result["error"] = str(exc)
+        result["versions"] = detect_versions(csdm)
         log(f"ERROR in job {run_id}: {exc}", job_dir)
+        # Out of working/: that folder means "interrupted by a crash" and is
+        # re-queued on start, but this job failed and must not render again
+        # by itself (seen 2026-11-01: a restart re-rendered a failed job).
+        failed = job_dir / "failed"
+        failed.mkdir(exist_ok=True)
+        shutil.move(working, failed / working.name)
         return False
     finally:
         result_path.parent.mkdir(parents=True, exist_ok=True)
@@ -372,7 +462,8 @@ def main() -> int:
             if consecutive_failures >= 2:
                 log(
                     "STOPPING: 2 job failures in a row. Check whether a game update "
-                    "broke HLAE (update CS Demo Manager), see worker.log.",
+                    "broke HLAE (update it in CS Demo Manager → Settings → Video; "
+                    "updating CS Demo Manager itself doesn't), see worker.log.",
                     job_dir,
                 )
                 return 1

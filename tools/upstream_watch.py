@@ -133,8 +133,8 @@ def issue_body(tool: Tool, tested: str, latest: Latest) -> str:
         "",
         "### Checklist",
         f"- [ ] {tool.how_to_update}",
-        "- [ ] Render a fresh demo end to end (`run` → `render` → `finish`) and watch the film.",
-        f"- [ ] It works: set `\"{tool.key}\": \"{latest.version}\"` in `compat/tested-versions.json` "
+        "- [ ] Run `python main.py selftest` with a fresh demo (renders and edits two clips, then compares versions).",
+        "- [ ] It passes: run it with `--write-tested` and commit `compat/tested-versions.json` "
         "in a PR to `develop`. The watcher closes this issue once that reaches `main` in a release.",
         "- [ ] It's broken: follow [When an update breaks things]"
         "(https://github.com/duffarn-dev/fragsmith/blob/main/docs/compatibility.md#when-an-update-breaks-things).",

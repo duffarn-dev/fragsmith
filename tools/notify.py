@@ -33,7 +33,7 @@ WORKFLOW_NAMES = {
 
 def upstream_message(tool: str, tested: str, new: str, issue_url: str) -> str:
     return (f"🔔 **Ny versjon av {tool}: {new}** (fragsmith er testet med {tested}).\n"
-            f"Oppdater på render-PC-en og test en fersk demo (`run` → `render` → `finish`). "
+            f"Oppdater på render-PC-en og kjør `python main.py selftest` med en fersk demo. "
             f"Sjekklista ligger i issuet: {issue_url}")
 
 

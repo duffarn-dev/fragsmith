@@ -6,6 +6,27 @@ All effects are toggled in `config.toml`. Most of them scale with the global `[e
 
 The AI Director (step 3) can *choose* where the big moves go (climax clip, replay, letterbox, which kills get a punch), but it never sets numeric parameters. Those always come from your config. The rule-based Director (used without an API key) never overrides effects, so you get the default rules described below.
 
+## Style presets
+
+Instead of setting every switch below, pick a style:
+
+```toml
+[style]
+preset = "hype"   # custom | clean | hype | cinematic
+```
+
+| Style | Looks like |
+|---|---|
+| `custom` | Your `[effects]` and `[editing]`, exactly as written. The default |
+| `clean` | Grade, vignette and beat cuts. No zooms, flashes, counters, replay or sound effects, and a lower intensity |
+| `hype` | Everything on and stronger: beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, counter, impact split, freeze, replay, louder sound effects |
+| `cinematic` | Letterbox, film grain, slow-mo push-ins, a gentle kill zoom, a long freeze and the replay. Nothing that shakes or flashes |
+
+- **Only some switches are set.** A preset sets only the switches it names (the full list is in `lib/styles.py`). Everything else keeps your value. That includes `enabled` (still the master switch), your `lut`, and the quality settings `eased_ramps` and `smooth_slowmo`.
+- **For one film:** `python main.py run <demo> --style cinematic` (also `batch --style`).
+- **The style is fixed when the edit plan is made.** It's stored in `02-edit-plan.json`, and `render` and `finish` use it, because the style decides which clips are rendered at 120 fps and whether the replay angle is rendered. `report.md` names it.
+- **Trying another style on clips you've already rendered:** change `"style"` in `02-edit-plan.json` and run `finish` again. Slow-mo on a clip that wasn't rendered at 120 fps falls back to interpolation. A replay that wasn't rendered uses your own POV instead of the victim's.
+
 ## Look
 
 | Effect | Config | What it does |
@@ -53,8 +74,35 @@ The AI Director (step 3) can *choose* where the big moves go (climax clip, repla
 |---|---|---|
 | Cold open | `[effects].intro_hook` | 3 micro-glimpses of the top kills before the intro card |
 | Instant replay | `[effects].instant_replay` | The climax kill rewinds and replays in slow-mo from the victim's POV. *Requires an extra render pass* |
-| Drop sync | `[editing].drop_sync` | Places the climax clip on the music's bass drop. Tracks without a clear drop fall back to climax-at-the-end |
+| Drop sync | `[editing].drop_sync` | Places the climax clip on the music's bass drop, within 100 ms. If the cuts can't land on the strongest drop, it takes the next one they can. Tracks without a clear drop, or with none in reach, fall back to climax-at-the-end |
 | Stats outro | `[editing].stats_outro` | Outro card with kills, K/D, HS% and best clutch instead of plain text |
+| Thumbnail | `[editing].thumbnail` | `thumbnail.jpg` next to `final.mp4`: 1280×720 and under 2 MB, as YouTube asks. The frame is from the climax clip just before the last kill, with the film's grade and LUT, a slight push-in, the climax label (the overlay text, or ACE / 4K / 1vX) and your `[branding]` logo. If it fails, the film is still made, and a flag says why |
+
+## Branding
+
+Your own look on every film, set in `[branding]`. Paths are relative to the Fragsmith folder unless absolute. A file that's missing is left out with a flag in `report.md`, and `doctor` warns about it.
+
+| Option | Config | What it does |
+|---|---|---|
+| Intro image | `[branding].intro_image` | A png/jpg behind the intro card. Any aspect: it's scaled to fill the frame, the center is kept, and it's darkened a little so the title stays readable |
+| Outro image | `[branding].outro_image` | The same, behind the outro or stats card |
+| Logo | `[branding].logo`, `logo_position`, `logo_size`, `logo_opacity` | A png (use transparency) in a corner of the whole film: cold open, cards, clips and replay. `logo_size` is its width as a share of the frame (0.12 = 12 %). `bottom-right` is the default; `top-right` covers the killfeed |
+
+The logo costs one extra encode of the film (about 12 s for a one-minute film). Without a logo, nothing changes.
+
+## Vertical 9:16 (Shorts, TikTok)
+
+`python main.py finish runs/<id> --vertical` makes `final-vertical.mp4` (1080×1920) next to `final.mp4`. It's the same edit, from the same raw clips, with the same music and beat sync, and it needs no extra render.
+
+- **The picture** is the center of each clip. The crosshair is always in the middle of a POV clip, so the action stays in view. The 16:9 render is scaled up about 1.8× for this, so it's a little softer than the landscape film. That's fine on a phone. If it's too soft for you, render at 1440p (`[video] width = 2560`, `height = 1440`), which costs render time.
+- **Overlays are placed for a phone held upright.** Captions and buttons cover the bottom of a Short, and the app bar covers the top:
+  - the lower third sits at 78 % of the height
+  - REPLAY sits below the app bar
+  - the logo always goes to the top (left or right, as in `logo_position`), at the same pixel width as in the landscape film
+- **No letterbox:** bars make no sense in 9:16, so `letterbox_on_slowmo` is off for this film.
+- **No killfeed:** the killfeed sits in the top right of the render and falls outside the crop. The kill counter and the overlay text carry the kills.
+- **Time:** the vertical film is a second editing pass, so `finish` takes about twice as long. Nothing extra renders in CS2.
+- **Length:** YouTube Shorts take up to 3 minutes and TikTok up to 10, so a normal Fragsmith film fits.
 
 ## Audio
 

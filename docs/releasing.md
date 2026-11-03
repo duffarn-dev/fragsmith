@@ -12,12 +12,12 @@ Every merge to `main` is a release. The `release` workflow reads the version fro
 | only fixes | patch | 0.3.0 → 0.3.1 |
 | something breaking (a renamed config key, a changed CLI) | minor, and say so in the PR | 0.3.0 → 0.4.0 |
 
-## Release day (Friday)
+## Release day (Wednesday)
 
 Release day is a maximum, not a deadline. If nothing finished is on `develop`, skip the release.
 
 1. **`develop` is green** and holds nothing half-done.
-2. **Check it with a real demo** on the render PC: `run` → `render` → `finish` on a fresh demo, and watch the film.
+2. **Check it with a real demo:** `python main.py selftest` (renders and edits two clips from a fresh demo). For bigger changes, also make a real film (`run` → `render` → `finish`) and watch it.
 3. **Bump the version** with a PR to `develop`:
    ```
    git switch develop && git pull
@@ -39,7 +39,7 @@ The `chore(release)` PRs get the `skip-changelog` label automatically, so the no
 
 ## Hotfix
 
-When the released version is broken (typically after a CS2 or HLAE update) and it can't wait for Friday:
+When the released version is broken (typically after a CS2 or HLAE update) and it can't wait for Wednesday:
 
 1. `git switch main && git pull && git switch -c hotfix/short-name`
 2. Fix it **and** bump the patch version in the same branch (`0.2.0` → `0.2.1`).

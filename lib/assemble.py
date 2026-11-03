@@ -9,29 +9,47 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from lib.edit_engine import ENCODE_ARGS
+from lib.branding import branding_files, card_background_filter, logo_overlay
+from lib.edit_engine import ENCODE_ARGS, LANDSCAPE, Frame
 from lib.ffmpeg_util import (
     FONT_FILE,
     drawtext_escape,
     probe_duration,
+    probe_video_start,
     run_ffmpeg,
 )
+from lib.hype_score import counts_as_kill, teamkill_note, teamkills_by
 from lib.models import EditPlan
 from lib.version import __version__
 
 
+def _card_source(
+    seconds: float, background: Path | None, frame: Frame = LANDSCAPE
+) -> tuple[list[str], str]:
+    """The video input of a card and the start of its filter chain: black,
+    or your [branding] image filling the frame."""
+    if background is None:
+        return ["-f", "lavfi", "-i", f"color=c=black:s={frame.size}:r=60:d={seconds}"], ""
+    return (
+        ["-loop", "1", "-framerate", "60", "-t", f"{seconds}", "-i", str(background)],
+        card_background_filter(frame.w, frame.h) + ",",
+    )
+
+
 def _text_card(
-    text: str, seconds: float, out_path: Path, log_path: Path, label: str
+    text: str, seconds: float, out_path: Path, log_path: Path, label: str,
+    background: Path | None = None, frame: Frame = LANDSCAPE,
 ) -> None:
     escaped = drawtext_escape(text or " ")
+    video_in, prefix = _card_source(seconds, background, frame)
     run_ffmpeg(
         [
-            "-f", "lavfi", "-i", f"color=c=black:s=1920x1080:r=60:d={seconds}",
+            *video_in,
             "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
             "-t", str(seconds),
             "-vf",
             (
-                f"drawtext=fontfile='{FONT_FILE}':text='{escaped}':expansion=none"
+                f"{prefix}drawtext=fontfile='{FONT_FILE}':text='{escaped}':expansion=none"
                 f":fontsize=72:fontcolor=white:borderw=3:bordercolor=black"
                 f":x=(w-text_w)/2:y=(h-text_h)/2,fade=t=in:st=0:d=0.4,"
                 f"fade=t=out:st={seconds - 0.4}:d=0.4"
@@ -105,8 +123,7 @@ def player_stats(
     all_kills = events.get("kills", [])
     kills = [
         k for k in all_kills
-        if k.get("attacker_steamid") == pov_steamid
-        and k.get("victim_steamid") != pov_steamid
+        if k.get("attacker_steamid") == pov_steamid and counts_as_kill(k)
     ]
     if not kills:
         return None
@@ -133,6 +150,8 @@ def _stats_card(
     seconds: float,
     out_path: Path,
     log_path: Path,
+    background: Path | None = None,
+    frame: Frame = LANDSCAPE,
 ) -> None:
     """Outro with stats instead of just text. Same fade as _text_card."""
     line1 = " — ".join(x for x in (player_name, stats["map"]) if x)
@@ -154,13 +173,14 @@ def _stats_card(
         for txt, size, ypos in rows
         if txt.strip()
     )
+    video_in, prefix = _card_source(seconds, background, frame)
     run_ffmpeg(
         [
-            "-f", "lavfi", "-i", f"color=c=black:s=1920x1080:r=60:d={seconds}",
+            *video_in,
             "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
             "-t", str(seconds),
             "-vf",
-            f"{draw},fade=t=in:st=0:d=0.4,fade=t=out:st={seconds - 0.4}:d=0.4",
+            f"{prefix}{draw},fade=t=in:st=0:d=0.4,fade=t=out:st={seconds - 0.4}:d=0.4",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-pix_fmt", "yuv420p", "-r", "60",
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
@@ -178,6 +198,7 @@ def build_intro_hook(
     work: Path,
     cfg: dict,
     log_path: Path,
+    frame: Frame = LANDSCAPE,
 ) -> list[Path]:
     """Cold open: up to 3 micro glimpses (0.25 s) of the top kills, cut
     straight from the raw clips around the KillMark offsets, placed before
@@ -213,12 +234,7 @@ def build_intro_hook(
             [
                 "-ss", f"{max(0.0, offset - 0.15):.3f}", "-i", str(clip),
                 "-t", "0.25",
-                "-vf",
-                (
-                    "scale=1920:1080:force_original_aspect_ratio=decrease,"
-                    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,"
-                    "fade=t=in:st=0:d=0.05:color=white"
-                ),
+                "-vf", f"{frame.normalize()},fade=t=in:st=0:d=0.05:color=white",
                 "-af", "asetpts=PTS-STARTPTS",
                 *ENCODE_ARGS,
                 str(out),
@@ -228,6 +244,42 @@ def build_intro_hook(
         )
         glimpses.append(out)
     return glimpses
+
+
+def concat_timeline(
+    parts: list[Path],
+    work: Path,
+    log_path: Path,
+    logo: Path | None = None,
+    branding: dict | None = None,
+    frame: Frame = LANDSCAPE,
+) -> Path:
+    """All parts in order -> work/timeline.mp4. Without a logo it's a stream
+    copy; with one, the video is encoded once more with the logo on top
+    (same video settings as ENCODE_ARGS, audio copied)."""
+    concat_list = work / "concat.txt"
+    concat_list.write_text(
+        "".join(f"file '{p.resolve().as_posix()}'\n" for p in parts),
+        encoding="utf-8",
+    )
+    timeline = work / "timeline.mp4"
+    if logo is None:
+        args = ["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy"]
+    else:
+        args = [
+            "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            "-loop", "1", "-i", str(logo),
+            "-filter_complex", logo_overlay(branding or {}, frame.w, frame_h=frame.h),
+            "-map", "[v]", "-map", "0:a",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-r", "60", "-c:a", "copy",
+        ]
+    run_ffmpeg(
+        [*args, str(timeline)],
+        log_path,
+        "step 7: concatenating segments" + (" + logo" if logo else ""),
+    )
+    return timeline
 
 
 def assemble(
@@ -244,11 +296,16 @@ def assemble(
     hook_files: list[Path] | None = None,
     intro_seconds: float | None = None,
     music_offset: float = 0.0,
+    frame: Frame = LANDSCAPE,
+    final_name: str = "final.mp4",
+    work_dir: Path | None = None,
 ) -> Path:
     """hook_files: prebuilt cold open glimpses (from build_intro_hook);
     None = build them here (backward compatible). intro_seconds overrides
     the config (intro adjustment for drop sync). music_offset: start the
-    music this many seconds INTO the track, with a short fade-in."""
+    music this many seconds INTO the track, with a short fade-in.
+    frame/final_name/work_dir: the 9:16 film is a second pass with its own
+    cards and timeline next to the landscape one."""
     editing = cfg.get("editing", {})
     intro_s = (
         float(editing.get("intro_seconds", 2.5))
@@ -258,10 +315,12 @@ def assemble(
     outro_s = float(editing.get("outro_seconds", 2.5))
     game_vol = float(editing.get("game_audio_volume", 0.25))
 
-    work = run_dir / "04-segments"
+    work = work_dir or run_dir / "04-segments"
     intro = work / "00_intro.mp4"
     outro = work / "99_outro.mp4"
-    _text_card(plan.intro_text, intro_s, intro, log_path, "intro card")
+    files, _ = branding_files(cfg)  # missing files are flagged by cmd_finish
+    _text_card(plan.intro_text, intro_s, intro, log_path, "intro card",
+               files["intro_image"], frame)
 
     # Stats outro when [editing].stats_outro is on and the data exists,
     # otherwise a plain text card (never a half-empty stats card)
@@ -277,31 +336,25 @@ def assemble(
     if stats:
         # a slightly longer card: three or four lines need reading time
         _stats_card(plan.outro_text, pov_name, stats,
-                    max(outro_s, 3.5), outro, log_path)
+                    max(outro_s, 3.5), outro, log_path, files["outro_image"], frame)
     else:
-        _text_card(plan.outro_text, outro_s, outro, log_path, "outro card")
+        _text_card(plan.outro_text, outro_s, outro, log_path, "outro card",
+                   files["outro_image"], frame)
 
     hook = (
         hook_files
         if hook_files is not None
-        else build_intro_hook(plan, candidates_by_id, clips_dir, work, cfg, log_path)
+        else build_intro_hook(plan, candidates_by_id, clips_dir, work, cfg, log_path, frame)
     )
     ordered = [*hook, intro, *segment_files, outro]
-    concat_list = work / "concat.txt"
-    concat_list.write_text(
-        "".join(f"file '{p.resolve().as_posix()}'\n" for p in ordered),
-        encoding="utf-8",
-    )
-    timeline = work / "timeline.mp4"
-    run_ffmpeg(
-        ["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy",
-         str(timeline)],
-        log_path,
-        "step 7: concatenating segments",
+    timeline = concat_timeline(
+        ordered, work, log_path, files["logo"], cfg.get("branding", {}), frame
     )
 
     total = probe_duration(timeline)
-    final = run_dir / "final.mp4"
+    final = run_dir / final_name
+    # the length the concat step gave each part (its format duration)
+    part_s = [probe_duration(p) for p in ordered]
 
     # SFX layer: whoosh into every clip change, impact on big kills (same
     # times as the impact split, from cut_log). Mixed below the music.
@@ -318,10 +371,10 @@ def assemble(
         seg_starts: list[float] = []
         pos = 0.0
         seg_set = {p.resolve() for p in segment_files}
-        for p in ordered:
+        for p, d in zip(ordered, part_s):
             if p.resolve() in seg_set:
                 seg_starts.append(pos)
-            pos += probe_duration(p)
+            pos += d
         whoosh_times = [max(0.0, s - 0.30) for s in seg_starts]
         impact_events = [
             s + t
@@ -346,6 +399,20 @@ def assemble(
                 )
                 sfx_labels.append(f"[{name}d{i}]")
 
+    # Game audio: each part's own audio, cut or padded to the part's length.
+    # Not the timeline's audio: the stream copy keeps every part's AAC
+    # priming and padding, so the game sound fell ~27 ms further behind the
+    # picture with every join (211 ms after 8 parts). Decoding each part on
+    # its own drops its priming, like a player does.
+    first_part = 2 + len(sfx_inputs)
+    game_chain = "".join(
+        f"[{first_part + k}:a]asetpts=PTS-STARTPTS,atrim=end={d:.6f},"
+        f"apad=whole_dur={d:.6f}[gp{k}];"
+        for k, d in enumerate(part_s)
+    ) + "".join(f"[gp{k}]" for k in range(len(part_s))) + (
+        f"concat=n={len(part_s)}:v=0:a=1,volume={game_vol}[game]"
+    )
+
     n_mix = 2 + len(sfx_labels)
     sfx_in = "".join(sfx_labels)
     # music_offset > 0 → the track starts partway in (so the drop hits the
@@ -368,7 +435,7 @@ def assemble(
         ratio = float(editing.get("sidechain_ratio", 8.0))
         release = float(editing.get("sidechain_release_ms", 300))
         mix = (
-            f"[0:a]volume={game_vol}[game];"
+            f"{game_chain};"
             f"{music_chain},asplit=2[m1][m2];"
             f"[game][m2]sidechaincompress=threshold={thr}:ratio={ratio}"
             f":attack=20:release={release}[gduck];"
@@ -377,20 +444,28 @@ def assemble(
         )
     else:
         mix = (
-            f"[0:a]volume={game_vol}[game];"
+            f"{game_chain};"
             f"{music_chain}[music];"
             f"[game][music]{sfx_in}amix=inputs={n_mix}"
             f":duration=first:normalize=0[amix]"
         )
     if sfx_chains:
         mix = ";".join(sfx_chains) + ";" + mix
+    # The concat step starts the picture ~21 ms in (the first part's AAC
+    # priming), so the audio starts there too instead of ahead of it
+    v_start = probe_video_start(timeline)
+    out_audio = "[amix]"
+    if v_start > 0:
+        mix += f";[amix]asetpts=PTS+{v_start:.6f}/TB[async]"
+        out_audio = "[async]"
     run_ffmpeg(
         [
             "-i", str(timeline),
             "-i", str(music_path),
             *[a for p in sfx_inputs for a in ("-i", p)],
+            *[a for p in ordered for a in ("-i", str(p))],
             "-filter_complex", mix,
-            "-map", "0:v", "-map", "[amix]",
+            "-map", "0:v", "-map", out_audio,
             "-c:v", "copy", "-c:a", "aac", "-b:a", "256k",
             str(final),
         ],
@@ -409,6 +484,8 @@ def write_report(
     final_path: Path,
     run_dir: Path,
     events: dict | None = None,
+    thumbnail: Path | None = None,
+    vertical: Path | None = None,
 ) -> Path:
     final_duration = probe_duration(final_path)
     lines = [
@@ -416,8 +493,15 @@ def write_report(
         "",
         f"**Generated:** {datetime.now():%Y-%m-%d %H:%M} by Fragsmith {__version__}",
         f"**Film:** {final_path.name} ({final_duration:.1f} s)",
+        f"**Style:** {plan.style}",
         f"**Music:** {plan.music_track} ({beats.get('bpm', '?')} BPM)",
     ]
+    if thumbnail:
+        lines.append(f"**Thumbnail:** {thumbnail.name}")
+    if vertical:
+        lines.append(
+            f"**Vertical:** {vertical.name} ({probe_duration(vertical):.1f} s, 9:16)"
+        )
     # the drop sync decision (put in the beats dict by cmd_finish)
     ds = beats.get("drop_sync")
     if ds:
@@ -482,6 +566,9 @@ def write_report(
             cand = candidates_by_id.get(cid)
             score = f" (hype {cand.hype_score})" if cand else ""
             lines.append(f"- {cid}{score}")
+    teamkills = teamkills_by(events or {}, getattr(any_cand, "player_steamid", ""))
+    if teamkills:
+        flags = [*flags, teamkill_note(teamkills)]
     if flags:
         lines += ["", "## Flags", ""]
         lines += [f"- {f}" for f in flags]

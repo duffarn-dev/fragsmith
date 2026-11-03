@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Callable
 
 from lib.version import __version__
+from worker import find_cs2  # stdlib only; also needed on the render PC
 
 PLACEHOLDER_STEAMID = "76561190000000000"
 STEAMID_RE = re.compile(r"^7656119\d{10}$")
@@ -45,29 +46,6 @@ class Report:
         print(f"  FAIL  {msg}")
         if hint:
             print(f"        → {hint}")
-
-
-def find_cs2() -> Path | None:
-    """CS2's install folder via Steam's library list (Windows only)."""
-    try:
-        import winreg
-
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
-            steam = Path(winreg.QueryValueEx(key, "SteamPath")[0])
-    except (ImportError, OSError):
-        return None
-    libraries = [steam]
-    vdf = steam / "steamapps" / "libraryfolders.vdf"
-    if vdf.exists():
-        text = vdf.read_text(encoding="utf-8", errors="replace")
-        libraries += [
-            Path(p.replace("\\\\", "\\"))
-            for p in re.findall(r'"path"\s+"([^"]+)"', text)
-        ]
-    for lib in libraries:
-        if (lib / "steamapps" / "appmanifest_730.acf").exists():
-            return lib / "steamapps" / "common" / "Counter-Strike Global Offensive"
-    return None
 
 
 def _check_python(r: Report) -> None:
@@ -155,6 +133,15 @@ def _check_config(r: Report, project_dir: Path) -> dict | None:
                 f"LUT file not found: {lut} (grading will run without it)",
                 "python tools/make_lut.py, or set [effects].lut = \"\".",
             )
+
+    from lib.branding import branding_files
+
+    files, missing = branding_files(cfg)
+    for warning in missing:
+        r.warn(warning, "Fix the path in [branding], or set it to \"\".")
+    used = [key for key, path in files.items() if path]
+    if used:
+        r.ok(f"Branding: {', '.join(used)}")
     return cfg
 
 

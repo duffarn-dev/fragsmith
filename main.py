@@ -3,6 +3,7 @@
 First time:
     python main.py setup               writes config.toml (one PC or two)
     python main.py doctor              checks that everything is in place
+    python main.py selftest            renders a short test film end to end
 
 Workflow:
     python main.py run <demo.dem>      steps 0-3, stops at the edit plan
@@ -23,6 +24,7 @@ sys.path.insert(0, str(PROJECT_DIR))
 
 from lib.hype_score import build_candidates  # noqa: E402
 from lib.parse_demo import DemoParseError, parse_demo  # noqa: E402
+from lib.styles import STYLES, apply_style, resolve_style  # noqa: E402
 from lib.version import __version__  # noqa: E402
 
 
@@ -82,6 +84,12 @@ def _resolve_demo(path_arg: str) -> Path:
 def cmd_run(args: argparse.Namespace) -> int:
     read_learnings()
     cfg = load_config()
+    try:
+        style = resolve_style(cfg, getattr(args, "style", None))
+    except ValueError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    cfg = apply_style(cfg, style)
 
     demo = _resolve_demo(args.demo)
     run_id = f"{demo.stem}-{datetime.now():%Y%m%d-%H%M%S}"
@@ -218,6 +226,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             return 1
 
+    plan.style = style
     (run_dir / "02-edit-plan.json").write_text(
         plan.model_dump_json(indent=2), encoding="utf-8"
     )
@@ -261,6 +270,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     print("=" * 64)
     print("EDIT PLAN (phase stop — rendering requires your approval)")
     print(f"  Director: {director_label}")
+    print(f"  Style: {style}")
     print(f"  Music: {plan.music_track}")
     print(f"  Intro: {plan.intro_text}   Outro: {plan.outro_text}")
     print(f"  {'#':>2} {'clip':<22} {'score':>6} {'sec':>6}  overlay/slow-mo")
@@ -317,6 +327,11 @@ def cmd_render(args: argparse.Namespace) -> int:
     from lib.render_clips import build_render_job, submit_job
 
     plan = EditPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+    try:
+        cfg = apply_style(cfg, plan.style)  # the style the plan was made with
+    except ValueError as exc:
+        print(f"ERROR in {plan_path.name}: {exc}")
+        return 1
     cand_data = json.loads(
         (run_dir / "01-candidates.json").read_text(encoding="utf-8")
     )
@@ -455,6 +470,11 @@ def cmd_finish(args: argparse.Namespace) -> int:
     from lib.models import EditPlan, Highlight
 
     plan = EditPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+    try:
+        cfg = apply_style(cfg, plan.style)  # the same style the clips were rendered with
+    except ValueError as exc:
+        print(f"ERROR in {plan_path.name}: {exc}")
+        return 1
     if args.music:
         plan.music_track = args.music  # override the Director's music choice
     cand_data = json.loads(cand_path.read_text(encoding="utf-8"))
@@ -601,6 +621,9 @@ def cmd_finish(args: argparse.Namespace) -> int:
         print("STOPPED: no segments could be built (are all raw clips missing?).")
         return 1
     print(f"    {len(segments)} segments built")
+    from lib.branding import branding_files
+
+    flags.extend(branding_files(cfg)[1])  # a missing image or logo is left out
 
     # Drop sync: measure the ACTUAL offset from the drop (encoding is frame-granular)
     if drop_info:
@@ -642,9 +665,57 @@ def cmd_finish(args: argparse.Namespace) -> int:
             f"with: python main.py finish {args.run_dir} --music <file>"
         )
 
+    vertical = None
+    if getattr(args, "vertical", False):
+        import time
+
+        from lib.edit_engine import PORTRAIT
+
+        # The same edit in a 9:16 frame from the same raw clips: the timing
+        # doesn't depend on the frame, so beat and drop sync carry over. The
+        # letterbox bar makes no sense in 9:16.
+        print("Vertical 9:16: editing again in portrait ...")
+        t0 = time.monotonic()
+        vdir = run_dir / "04-segments-vertical"
+        vdir.mkdir(parents=True, exist_ok=True)
+        vcfg = {**cfg, "effects": {**cfg.get("effects", {}), "letterbox_on_slowmo": False}}
+        try:
+            vhooks = build_intro_hook(
+                plan, candidates_by_id, clips_dir, vdir, vcfg, log_path, frame=PORTRAIT
+            )
+            vsegs, vcut_log, vflags = build_segments(
+                plan, candidates_by_id, clips_dir, vdir, beats_used, vcfg, log_path,
+                context={"map": events.get("map", "")},
+                timeline_start=hook_s + intro_s, frame=PORTRAIT,
+            )
+            vertical = assemble(
+                plan, vsegs, music_path, run_dir, vcfg, log_path,
+                candidates_by_id=candidates_by_id, clips_dir=clips_dir,
+                events=events, cut_log=vcut_log, hook_files=vhooks,
+                intro_seconds=intro_s, music_offset=music_offset,
+                frame=PORTRAIT, final_name="final-vertical.mp4", work_dir=vdir,
+            )
+        except FfmpegError as exc:  # the landscape film is done either way
+            flags.append(f"No vertical film: {str(exc).splitlines()[0]}")
+        else:
+            flags.extend(f for f in vflags if f not in flags)
+            print(f"    {vertical.name} in {time.monotonic() - t0:.0f} s")
+
+    thumbnail = None
+    if editing.get("thumbnail", True):
+        from lib.thumbnail import make_thumbnail
+
+        try:
+            thumbnail = make_thumbnail(
+                plan, candidates_by_id, clips_dir, run_dir / "thumbnail.jpg",
+                cfg, log_path,
+            )
+        except FfmpegError as exc:  # a thumbnail never fails the film
+            flags.append(f"No thumbnail: {str(exc).splitlines()[0]}")
+
     report = write_report(
         plan, candidates_by_id, cut_log, flags, beats_used, final, run_dir,
-        events=events,
+        events=events, thumbnail=thumbnail, vertical=vertical,
     )
 
     if flags:
@@ -654,6 +725,10 @@ def cmd_finish(args: argparse.Namespace) -> int:
     print()
     print(f"DONE: {final}")
     print(f"Report: {report}")
+    if thumbnail:
+        print(f"Thumbnail: {thumbnail}")
+    if vertical:
+        print(f"Vertical: {vertical}")
     print(f"Raw clips are kept until you've watched the film — "
           f"delete them with: python main.py cleanup {args.run_dir}")
     return 0
@@ -693,7 +768,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
         code = cmd_run(
             argparse.Namespace(
                 demo=str(path), player=args.player, music=None,
-                director=args.director,
+                director=args.director, style=args.style,
             )
         )
         processed[stem] = {
@@ -727,7 +802,7 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
         )
         return 1
     freed = 0
-    for sub in ("03-raw-clips", "04-segments"):
+    for sub in ("03-raw-clips", "04-segments", "04-segments-vertical"):
         target = run_dir / sub
         if target.is_dir():
             freed += sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
@@ -742,6 +817,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     load_dotenv()
     return run_doctor(PROJECT_DIR)
+
+
+def cmd_selftest(args: argparse.Namespace) -> int:
+    from lib.selftest import run_selftest
+
+    read_learnings()
+    return run_selftest(PROJECT_DIR, args, load_config(), cmd_render, cmd_finish)
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
@@ -773,6 +855,19 @@ def main() -> int:
     doc_p = sub.add_parser("doctor", help="Check that everything needed is installed and configured")
     doc_p.set_defaults(func=cmd_doctor)
 
+    st_p = sub.add_parser(
+        "selftest",
+        help="Render and edit two clips from a fresh demo to check the whole chain still works",
+    )
+    st_p.add_argument("--demo", help="Demo to test with (default: newest in [selftest].demo_dir)")
+    st_p.add_argument("--player", help="SteamID64 for the POV (overrides config)")
+    st_p.add_argument("--write-tested", action="store_true",
+                      help="After a PASS, record the versions in compat/tested-versions.json")
+    st_p.add_argument("--keep", action="store_true", help="Keep raw clips and segments after a PASS")
+    st_p.add_argument("--timeout", type=float, default=30,
+                      help="Minutes to wait for the render PC (two-PC modes, default 30)")
+    st_p.set_defaults(func=cmd_selftest)
+
     run_p = sub.add_parser("run", help="Steps 0-3 for one demo: parse, score, edit plan")
     run_p.add_argument("demo", help="Path to a .dem or .dem.bz2 file")
     run_p.add_argument("--player", help="SteamID64 for the POV (overrides config)")
@@ -780,6 +875,10 @@ def main() -> int:
     run_p.add_argument(
         "--director", choices=("auto", "rules", "claude"),
         help="Who makes the edit plan (overrides [director].mode)",
+    )
+    run_p.add_argument(
+        "--style", choices=tuple(STYLES),
+        help="Effect style for this film (overrides [style].preset)",
     )
     run_p.set_defaults(func=cmd_run)
 
@@ -796,6 +895,10 @@ def main() -> int:
     fin_p.add_argument("run_dir", help="Path to runs/<id>/ from 'run'")
     fin_p.add_argument("--clips", help="Raw clip folder (default: <run-dir>/03-raw-clips)")
     fin_p.add_argument("--music", help="Override the music choice (file name in the music folder)")
+    fin_p.add_argument(
+        "--vertical", action="store_true",
+        help="Also make final-vertical.mp4 (9:16, for Shorts/TikTok) from the same clips",
+    )
     fin_p.set_defaults(func=cmd_finish)
 
     batch_p = sub.add_parser("batch", help="Process every demo in a folder (steps 0-3)")
@@ -805,6 +908,10 @@ def main() -> int:
     batch_p.add_argument(
         "--director", choices=("auto", "rules", "claude"),
         help="Who makes the edit plans (overrides [director].mode)",
+    )
+    batch_p.add_argument(
+        "--style", choices=tuple(STYLES),
+        help="Effect style for every film (overrides [style].preset)",
     )
     batch_p.set_defaults(func=cmd_batch)
 

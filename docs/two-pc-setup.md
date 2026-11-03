@@ -21,7 +21,7 @@ With only one PC you don't need any of this: keep `[render].mode = "local"` and 
 - Open the CS Demo Manager app **once** first and finish the setup wizard. It sets up the PostgreSQL database the CLI depends on.
 - Rendering starts CS2 with `-insecure`. That's normal, but don't play VAC-secured matches while the worker is running.
 - The PC is **busy** during rendering because CS2 runs in the foreground. Don't touch it.
-- CS2 updates break HLAE from time to time. Symptom: `csdm video` fails right after a CS2 update. Fix: update CS Demo Manager (it fetches a new HLAE) and try again. The worker stops by itself after 2 failures in a row.
+- CS2 updates break HLAE from time to time. Symptom: `csdm video` fails right after a CS2 update. Fix: update HLAE in CS Demo Manager (**Settings → Video → HLAE**; updating CS Demo Manager itself doesn't) and try again. The worker stops by itself after 2 failures in a row.
 
 ## Choose how jobs travel between the PCs
 
@@ -56,7 +56,7 @@ python worker.py --job-dir C:\fragsmith-jobs
 
 Add `--csdm "C:\...\csdm.exe"` if csdm lives somewhere unusual, or `--once` to process a single job and exit.
 
-The worker logs to the console and to `<job_dir>\worker.log`. A running worker doesn't pick up code changes: restart it after updating `worker.py`.
+The worker logs to the console and to `<job_dir>\worker.log`. A job that fails is moved to `<job_dir>\failed\`, with its result (and the error) in `outbox\`. To retry it, move it back to `inbox\`. A running worker doesn't pick up code changes: restart it after updating `worker.py`. After updating Fragsmith on the main PC, copy the new `worker.py` to the render PC too. `python main.py selftest` warns when the worker there is older (its results lack the version info).
 
 ## End-to-end flow
 

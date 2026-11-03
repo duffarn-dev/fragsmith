@@ -90,4 +90,7 @@ class EditPlan(BaseModel):
     outro_text: str
     decisions: list[EditDecision]
     dropped_clip_ids: list[str]
-    schema_version: str = "1.1"  # 1.1: + is_climax/effects_on/effects_off
+    schema_version: str = "1.2"  # 1.1: + is_climax/effects_on/effects_off · 1.2: + style
+    # Set by `run` after the Director (whatever the Director put here is
+    # overwritten). Older plans have none and read as "custom".
+    style: str = "custom"

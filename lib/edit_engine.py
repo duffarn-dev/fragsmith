@@ -2,7 +2,8 @@
 clip lengths. Raw ffmpeg via subprocess (a deliberate choice over moviepy).
 
 Input:  raw clips (03-raw-clips/<clip_id>.mp4) + edit plan + beats
-Output: 04-segments/NN_<clip_id>.mp4 (uniform 1080p60 h264 + 48k stereo)
+Output: 04-segments/NN_<clip_id>.mp4 (uniform 60 fps h264 in the output
+        frame, 1920x1080 unless a Frame says otherwise, + 48k stereo)
         + a cut log with the beat offset per cut (the ±100 ms target is
         checked by ear; the numbers are logged so they can be compared)
 """
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import NamedTuple
 
 from lib.beats import nearest_beat_before, shift_beats
 from lib.ffmpeg_util import (
@@ -26,6 +28,45 @@ ENCODE_ARGS = [
     "-pix_fmt", "yuv420p", "-r", "60",
     "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
 ]
+
+
+class Frame(NamedTuple):
+    """The output frame every segment, card and effect is built for.
+
+    cover=False scales the source to fit and pads (a 16:9 render into a 16:9
+    frame: a no-op). cover=True fills the frame and crops the center: a 9:16
+    film from a 16:9 render keeps the crosshair, and so the action, in view.
+    """
+
+    w: int
+    h: int
+    cover: bool = False
+
+    @property
+    def size(self) -> str:
+        return f"{self.w}x{self.h}"
+
+    @property
+    def portrait(self) -> bool:
+        """Shorts/TikTok: captions and buttons cover the bottom ~20% and the
+        app bar the top ~8%, so overlays keep out of those bands."""
+        return self.h > self.w
+
+    def normalize(self) -> str:
+        """Filters that bring any source into this frame (fps not included)."""
+        if self.cover:
+            return (
+                f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,"
+                f"crop={self.w}:{self.h}"
+            )
+        return (
+            f"scale={self.w}:{self.h}:force_original_aspect_ratio=decrease,"
+            f"pad={self.w}:{self.h}:(ow-iw)/2:(oh-ih)/2"
+        )
+
+
+LANDSCAPE = Frame(1920, 1080)
+PORTRAIT = Frame(1080, 1920, cover=True)
 
 
 def _atempo_chain(speed: float) -> str:
@@ -173,7 +214,7 @@ def _eased_parts(
 
 
 def _effects_filters(
-    effects: dict, beat_ctx: dict | None
+    effects: dict, beat_ctx: dict | None, frame: Frame = LANDSCAPE
 ) -> list[str]:
     """Effect chain (before text overlays): grade, beat zoom, wobble, vignette.
 
@@ -214,7 +255,7 @@ def _effects_filters(
         )
         vf.append(
             f"zoompan=z='{expr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-            f":d=1:fps=60:s=1920x1080"
+            f":d=1:fps=60:s={frame.size}"
         )
 
     if effects.get("wobble", False) and k > 0:
@@ -228,17 +269,20 @@ def _effects_filters(
     return vf
 
 
-def _max_tilt_degrees(zoom: float) -> float:
+def _max_tilt_degrees(zoom: float, frame: Frame = LANDSCAPE) -> float:
     """Largest tilt angle where the zoom crop covers the black corners from
-    rotate (16:9): cos(θ) + (W/H)·sin(θ) <= zoom, minus a 1° margin."""
-    ratio = 1920 / 1080
+    rotate: cos(θ) + (long/short side)·sin(θ) <= zoom, minus a 1° margin.
+    The long side binds, so 16:9 and 9:16 get the same limit."""
+    ratio = max(frame.w, frame.h) / min(frame.w, frame.h)
     r = math.hypot(1.0, ratio)
     if zoom >= r:
         return 45.0
     return max(0.0, math.degrees(math.atan(ratio) - math.acos(zoom / r)) - 1.0)
 
 
-def _kill_punch_filters(kill_fx: dict, effects: dict) -> list[str]:
+def _kill_punch_filters(
+    kill_fx: dict, effects: dict, frame: Frame = LANDSCAPE
+) -> list[str]:
     """Deep zoom into the crosshair (frame center) at the moment of the kill,
     optionally combined with a dutch tilt. Times are in OUTPUT time (via
     source_to_output_time).
@@ -265,7 +309,7 @@ def _kill_punch_filters(kill_fx: dict, effects: dict) -> list[str]:
         )
 
     vf: list[str] = []
-    deg = min(float(kill_fx.get("tilt_deg", 0.0)), _max_tilt_degrees(zmax))
+    deg = min(float(kill_fx.get("tilt_deg", 0.0)), _max_tilt_degrees(zmax, frame))
     if deg > 0:
         rad = math.radians(deg)
         a = (
@@ -277,12 +321,14 @@ def _kill_punch_filters(kill_fx: dict, effects: dict) -> list[str]:
         vf.append(f"rotate=a='{a}':ow=iw:oh=ih:c=black")
     vf.append(
         f"zoompan=z='{z_expr('on/60')}'"
-        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=60:s=1920x1080"
+        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=60:s={frame.size}"
     )
     return vf
 
 
-def _headshot_punch_filter(punches: list[dict], _effects: dict) -> str:
+def _headshot_punch_filter(
+    punches: list[dict], _effects: dict, frame: Frame = LANDSCAPE
+) -> str:
     """Small zoom punch on headshots: ease in ~0.35 s to max (< ~1.25×), a
     short hold over the kill, snap out in 2-3 frames. All punches are
     combined in ONE zoompan (each envelope is 0 outside its window), centered
@@ -302,7 +348,7 @@ def _headshot_punch_filter(punches: list[dict], _effects: dict) -> str:
     z = "1+" + "+".join(envs)
     return (
         f"zoompan=z='{z}'"
-        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=60:s=1920x1080"
+        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=60:s={frame.size}"
     )
 
 
@@ -320,6 +366,7 @@ def _build_filter(
     lowerthird: str | None = None,
     impacts: list[float] | None = None,
     src_fps: float = 60.0,
+    frame: Frame = LANDSCAPE,
 ) -> tuple[str, str, str]:
     """filter_complex: trim/setpts/atempo per part + concat + effects +
     overlay + entry transition. src_fps: the source frame rate; high-fps
@@ -345,13 +392,10 @@ def _build_filter(
             # and causes artifacts on smoke/particles (see learnings_runtime.md).
             vchain += ",minterpolate=fps=60:mi_mode=mci"
         # normalize resolution AND fps BEFORE concat: the punch zoompan locks
-        # its part to 1080p, concat requires the same size, and all zoompan
-        # expressions after concat treat time as on/60 (sources ≠ 60 fps
-        # would otherwise get the effects at half/double speed)
-        vchain += (
-            ",fps=60,scale=1920:1080:force_original_aspect_ratio=decrease,"
-            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
-        )
+        # its part to the frame size, concat requires the same size, and all
+        # zoompan expressions after concat treat time as on/60 (sources ≠ 60
+        # fps would otherwise get the effects at half/double speed)
+        vchain += f",fps=60,{frame.normalize()}"
         # micro slow-mo parts have their own headshot punch; a push-in on
         # top would stack two zooms on the same kill
         in_micro = any(
@@ -366,7 +410,7 @@ def _build_filter(
             vchain += (
                 f",zoompan=z='1.02+{rate:.6f}*on'"
                 f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                f":d=1:fps=60:s=1920x1080"
+                f":d=1:fps=60:s={frame.size}"
             )
         chains.append(f"{vchain}[v{i}]")
         chains.append(
@@ -384,8 +428,7 @@ def _build_filter(
         chains.append(
             f"[0:v]trim=start={ft:.3f}:end={ft + 0.1:.3f},setpts=PTS-STARTPTS,"
             f"select='eq(n,0)',tpad=stop_mode=clone:stop_duration={fdur:.3f},"
-            f"fps=60,scale=1920:1080:force_original_aspect_ratio=decrease,"
-            f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2[vfz]"
+            f"fps=60,{frame.normalize()}[vfz]"
         )
         chains.append(
             f"aevalsrc=0|0:s=48000:d={fdur:.3f},"
@@ -397,15 +440,15 @@ def _build_filter(
     chains.append(f"{inputs}concat=n={len(labels)}:v=1:a=1[vc][ac]")
 
     # (resolution is already normalized per part, before concat)
-    vf = _effects_filters(effects, beat_ctx)
+    vf = _effects_filters(effects, beat_ctx, frame)
     if hs_punches:
         # headshot punch before kill punch: both are center zooms, and the
         # selection in build_segments makes sure the windows don't overlap
-        vf.append(_headshot_punch_filter(hs_punches, effects))
+        vf.append(_headshot_punch_filter(hs_punches, effects, frame))
     if kill_fx:
         # kill punch BEFORE text/letterbox: the text shouldn't rotate along,
         # and the letterbox bars should stay still over the tilted image
-        vf += _kill_punch_filters(kill_fx, effects)
+        vf += _kill_punch_filters(kill_fx, effects, frame)
     if impacts:
         # 3 frames of chroma shift on big kills: "impact".
         # chromashift, NOT rgbashift: rgbashift forces YUV→RGB→YUV on the
@@ -454,8 +497,12 @@ def _build_filter(
             )
     if lowerthird:
         # Subtle context line (map · round · 1vX) in the bottom left, short
-        # fade in/out. Raised above the bottom bar when letterbox is active.
-        y = 870 if letterbox else 1010
+        # fade in/out. Raised above the bottom bar when letterbox is active,
+        # and above the captions/buttons band in portrait.
+        if frame.portrait:
+            y = round(frame.h * 0.78)
+        else:
+            y = frame.h - (210 if letterbox else 70)
         vf.append(
             f"drawtext=fontfile='{FONT_FILE}'"
             f":text='{drawtext_escape(lowerthird)}':expansion=none"
@@ -477,11 +524,12 @@ def _build_filter(
         # became unreadable. Done with overlay, NOT drawbox: in drawbox
         # expressions `t` means thickness, not time; only overlay has a
         # time-animated position.
-        # Note: overlay_text sits at y=h*0.72 (~777) and clears the bar (920).
+        # Note: overlay_text sits at y=h*0.72 (~777 in 1080p) and clears the
+        # bar (920).
         slide = "min(160,160*t/0.4)"
         chains.append(f"[vc]{','.join(vf)}[vfx]")
-        chains.append("color=black:s=1920x160:r=60[lbb]")
-        chains.append(f"[vfx][lbb]overlay=x=0:y='1080-{slide}'[vout]")
+        chains.append(f"color=black:s={frame.w}x160:r=60[lbb]")
+        chains.append(f"[vfx][lbb]overlay=x=0:y='{frame.h}-{slide}'[vout]")
     else:
         chains.append(f"[vc]{','.join(vf)}[vout]")
     return ";".join(chains), "[vout]", "[ac]"
@@ -539,6 +587,7 @@ def _build_replay_segment(
     out_path: Path,
     log_path: Path,
     label: str,
+    frame: Frame = LANDSCAPE,
 ) -> float:
     """Build rewind + slow-mo replay as a separate segment.
 
@@ -565,26 +614,24 @@ def _build_replay_segment(
     )
     if smooth:
         replay_v += ",minterpolate=fps=60:mi_mode=mci"
-    replay_v += (
-        ",fps=60,scale=1920:1080:force_original_aspect_ratio=decrease,"
-        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
-    )
-    vf = _effects_filters(effects, None)
+    replay_v += f",fps=60,{frame.normalize()}"
+    vf = _effects_filters(effects, None, frame)
     if vf:
         replay_v += "," + ",".join(vf)
-    # REPLAY badge: top center (the killfeed lives in the top right), pulsing
+    # REPLAY badge: top center (the killfeed lives in the top right), pulsing;
+    # in portrait below the app bar
+    badge_y = round(frame.h * 0.12) if frame.portrait else 70
     replay_v += (
         f",drawtext=fontfile='{FONT_FILE}':text='REPLAY':expansion=none"
         f":fontsize=72:fontcolor=white:borderw=5:bordercolor=black"
-        f":x=(w-text_w)/2:y=70:alpha='0.6+0.4*abs(sin(t*3))'"
+        f":x=(w-text_w)/2:y={badge_y}:alpha='0.6+0.4*abs(sin(t*3))'"
     )
 
     chains = [
         # rewind: from just before the kill to the segment end, reversed at high speed
         f"[0:v]trim=start={rew_from:.3f}:end={seg_duration:.3f},"
         f"setpts=PTS-STARTPTS,reverse,setpts=PTS/{rew_speed:.4f},fps=60,"
-        f"scale=1920:1080:force_original_aspect_ratio=decrease,"
-        f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2[rv]",
+        f"{frame.normalize()}[rv]",
         f"aevalsrc=0|0:s=48000:d={REPLAY_REWIND_S:.3f},"
         f"aformat=sample_fmts=fltp:channel_layouts=stereo[ra]",
         f"{replay_v}[pv]",
@@ -823,6 +870,52 @@ def outro_seconds(cfg: dict) -> float:
 DROP_INTRO_MIN_S = 1.5
 DROP_INTRO_EXTRA_MAX_S = 4.0
 DROP_CONVERGED_S = 0.02
+DROP_SOLVE_STEPS = 12
+# A drop is hit when the climax starts this close to it. Not the beat
+# tolerance: a whole beat (0.6 s at 100 BPM) is inside that, and a climax
+# a beat late puts the gap and the boom on the clip before it
+DROP_MAX_ERROR_S = 0.1
+
+
+def _solve_drop(
+    err_at, x: float, lo: float | None = None, hi: float | None = None
+) -> float | None:
+    """The lever value x (intro length or music offset) that puts the
+    climax start on the drop. err_at(x) is the drop's timeline position
+    minus the climax start (None if the climax can't be placed); it only
+    falls as x grows. The cuts snap to the beat grid, so the error moves a
+    whole beat at a time: a plain step of x += error can jump past the drop
+    beat and back. Once the error has had both signs, bisect between them,
+    which finds the drop beat if any x reaches it. It may not: the cut into
+    the climax snaps from where the clip before it snapped, so it can skip
+    a beat (seen at 99 BPM: from 604 ms early straight to 581 ms late).
+    Returns the x with the smallest error seen, None if none could be."""
+    best: tuple[float, float] | None = None  # (x, error)
+    below = above = None  # largest x with the error > 0, smallest with < 0
+    for _ in range(DROP_SOLVE_STEPS):
+        err = err_at(x)
+        if err is None:
+            break
+        if best is None or abs(err) < abs(best[1]):
+            best = (x, err)
+        if abs(err) <= DROP_CONVERGED_S:
+            break
+        if err > 0:
+            below = x if below is None else max(below, x)
+        else:
+            above = x if above is None else min(above, x)
+        if below is not None and above is not None:
+            nxt = (below + above) / 2
+        else:
+            nxt = x + err
+        if lo is not None:
+            nxt = max(lo, nxt)
+        if hi is not None:
+            nxt = min(hi, nxt)
+        if abs(nxt - x) < 0.005:
+            break
+        x = nxt
+    return None if best is None else best[0]
 
 
 def plan_drop_sync(
@@ -884,36 +977,25 @@ def plan_drop_sync(
         drop_t = float(drop["time_s"])
         r = drop_t - c0
 
+        def intro_err(intro: float) -> float | None:
+            c = climax_start(beats, intro)
+            return None if c is None else drop_t - c
+
+        def offset_err(off: float) -> float | None:
+            c = climax_start(shift_beats(beats, off), base_intro)
+            return None if c is None else (drop_t - off) - c
+
         # Lever 1: intro adjustment, the drop is close to the natural climax
         if lo - base_intro - tolerance <= r <= hi - base_intro + tolerance:
-            intro = min(hi, max(lo, base_intro + r))
-            for _ in range(6):
-                c = climax_start(beats, intro)
-                if c is None:
-                    break
-                err = drop_t - c
-                if abs(err) <= DROP_CONVERGED_S:
-                    break
-                new_intro = min(hi, max(lo, intro + err))
-                if abs(new_intro - intro) < 0.005:
-                    break
-                intro = new_intro
-            c = climax_start(beats, intro)
-            if c is not None and abs(c - drop_t) <= tolerance:
+            intro = _solve_drop(intro_err, min(hi, max(lo, base_intro + r)), lo, hi)
+            c = None if intro is None else climax_start(beats, intro)
+            if c is not None and abs(c - drop_t) <= DROP_MAX_ERROR_S:
                 return result(beats, intro, 0.0, "intro", drop_t, c - drop_t)
 
         # Lever 2: music offset, the drop is far INTO the track
         if r > 0:
-            off = r
-            for _ in range(6):
-                c = climax_start(shift_beats(beats, off), base_intro)
-                if c is None or off <= 0:
-                    break
-                err = (drop_t - off) - c
-                if abs(err) <= DROP_CONVERGED_S:
-                    break
-                off += err
-            if off > 0:
+            off = _solve_drop(offset_err, r, lo=0.0)
+            if off is not None and off > 0:
                 shifted = shift_beats(beats, off)
                 c = climax_start(shifted, base_intro)
                 # the rest of the track must cover the whole film, or the
@@ -926,7 +1008,7 @@ def plan_drop_sync(
                 music_left = float(beats.get("duration_seconds", 0.0)) - off
                 if (
                     c is not None
-                    and abs(c - (drop_t - off)) <= tolerance
+                    and abs(c - (drop_t - off)) <= DROP_MAX_ERROR_S
                     and music_left >= film_end
                 ):
                     return result(
@@ -946,6 +1028,7 @@ def build_segments(
     log_path: Path,
     context: dict | None = None,
     timeline_start: float | None = None,
+    frame: Frame = LANDSCAPE,
 ) -> tuple[list[Path], list[dict], list[str]]:
     """Returns (segment files in order, cut log, flags).
 
@@ -1144,6 +1227,7 @@ def build_segments(
             freeze, hs_punches, [(s, e) for s, e, _ in micro],
             counter, lowerthird, impacts,
             src_fps=probe_fps(clip_path),  # high-fps source → real slow-mo
+            frame=frame,
         )
         out_path = segments_dir / f"{decision.order:02d}_{decision.clip_id}.mp4"
         run_ffmpeg(
@@ -1202,6 +1286,7 @@ def build_segments(
                 replay_kill.offset_s, _out_time(replay_kill.offset_s),
                 actual, fx, replay_out, log_path,
                 f"step 6: replay ({decision.clip_id})",
+                frame=frame,
             )
             # impact SFX when the kill lands in the replay (after the rewind)
             kill_in_replay = REPLAY_REWIND_S + (

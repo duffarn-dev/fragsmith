@@ -14,9 +14,11 @@ PROJECT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+import lib.edit_engine as engine  # noqa: E402
 from lib.assemble import build_intro_hook  # noqa: E402
 from lib.edit_engine import (  # noqa: E402
     _simulate_climax_start,
+    _solve_drop,
     build_segments,
     plan_drop_sync,
 )
@@ -255,6 +257,45 @@ def main() -> None:
         short = beats_grid([drop_b], track_s=drop_b + 4.0)
         check("offset rejected when the rest of the track is too short",
               plan_drop_sync(plan, candidates, clips, short, cfg, hook_s) is None)
+
+        # -- a drop the cut can't land on ------------------------------------
+        print("a drop beat the cut skips:")
+        # The cut into the climax snaps from where the clip before it
+        # snapped, so it can skip a beat: seen at 99 BPM, from 604 ms early
+        # straight to 581 ms late, and the film was made 581 ms late
+        grid = beats_grid([]).get("beat_times")
+        skipped = 60.0
+
+        def skipping(*args):
+            beats, start = args[3], args[5]
+            off = float(beats.get("music_offset_s", 0.0))
+            at = 20.0 + start + off  # the natural climax start, in the track
+            return max(t for t in grid if t <= at and t != skipped) - off
+
+        engine._simulate_climax_start = skipping
+        try:
+            ds3 = plan_drop_sync(plan, candidates, clips,
+                                 beats_grid([skipped, 90.0]), cfg, hook_s)
+        finally:
+            engine._simulate_climax_start = _simulate_climax_start
+        check("a beat off isn't a hit: the next drop is used",
+              ds3 is not None and ds3["drop_track_s"] == 90.0,
+              "none" if ds3 is None
+              else f"{ds3['drop_track_s']} s, {ds3['predicted_error_ms']} ms")
+        if ds3:
+            check("on that drop", abs(ds3["predicted_error_ms"]) <= 100,
+                  f"{ds3['predicted_error_ms']} ms")
+
+        # a step of x += error jumps past a narrow band around the drop
+        # and back (9.7 → 10.3 → 9.7 ...); bisecting lands in it
+        def band(x: float) -> float:
+            return 0.6 if x < 10.0 else (0.0 if x < 10.03 else -0.6)
+
+        x = _solve_drop(band, 9.7)
+        check("the solver finds a narrow band", x is not None and band(x) == 0.0,
+              f"x {x}")
+        check("the solver gives up on a missing climax",
+              _solve_drop(lambda x: None, 9.7) is None)
 
         # -- fallback: no drops / drop_sync off -----------------------------
         print("fallback:")

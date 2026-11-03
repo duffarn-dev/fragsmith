@@ -39,12 +39,20 @@ python tests/test_privacy_check.py
 python tests/test_release.py
 python tests/test_upstream_watch.py
 python tests/test_notify.py
+python tests/test_selftest.py
+python tests/test_styles.py
+python tests/test_branding.py
+python tests/test_thumbnail.py
+python tests/test_frame.py
+python tests/test_audio_sync.py
+python tests/test_hype_score.py
 ```
 
 They need ffmpeg on your PATH. GitHub runs them on every pull request as well. See [tests/README.md](tests/README.md) for patterns worth reusing, such as mock clips at 720p30 instead of 1080p60.
 
 ## Pull requests
 
+- Bigger features: check [ROADMAP.md](ROADMAP.md) and comment on the issue first, so two people don't build the same thing.
 - Branch from `develop` and open the PR against `develop`, not `main`. `main` only holds released code. The full branch model is in [docs/development.md](docs/development.md).
 - Give the PR a [Conventional Commits](https://www.conventionalcommits.org/) title (`feat: ...`, `fix: ...`, `docs: ...`). It becomes the commit message and the line in the release notes, and the `pr-title` check sets the labels from it.
 - Keep each PR to one change, and run the tests before you open it.

@@ -31,11 +31,28 @@ or start the workflow on GitHub: **Actions → upstream-watch → Run workflow**
 
 GitHub pauses scheduled workflows in a repository with no activity for 60 days, and sends an email first. Any commit, or a manual run, starts it again.
 
+## The selftest
+
+```
+python main.py selftest
+```
+
+It runs the real pipeline on a small scale, in the configured render mode:
+
+1. It reads the versions on this PC (Fragsmith, Python, ffmpeg, demoparser2, librosa).
+2. It takes the newest demo in `[selftest].demo_dir` (or `--demo`). The demo must be **fresh**: the header says which CS2 patch recorded it, and the selftest warns when that differs from the render PC's CS2.
+3. It parses the demo, and the rules Director picks two clips: the best one (usually slow-mo, so rendered at high fps) and a plain one, so both render passes run.
+4. The render PC renders them. Each clip must have the right size and frame rate, and must not be black: a broken HLAE can "render" an empty picture.
+5. It reads the CS2, HLAE and CS Demo Manager versions from the render result.
+6. It edits the clips to a generated 120 BPM click track (steps 5–7) and checks `final.mp4`.
+
+Every step prints OK, WARN or FAIL. The result ends with PASS or FAIL, and the details go to `runs/selftest-<time>/selftest-report.json`. After a PASS, the raw clips are deleted (`--keep` keeps them), and the test film stays. `--write-tested` records the versions in `compat/tested-versions.json`, but only after a PASS where every version was found.
+
 ## Handling an `upstream` issue
 
 1. Update the tool on the render PC (the issue says how).
-2. Render a fresh demo end to end: `run` → `render` → `finish`, and watch the film.
-3. **It works:** in a PR to `develop`, set the new version in `compat/tested-versions.json` and link the issue. It ships with the next release, and the watcher then closes the issue itself. (`Closes #12` in a PR description only works for PRs into the default branch, and this one goes to `develop`.)
+2. Run `python main.py selftest` with a fresh demo.
+3. **It passes:** run it again with `--write-tested`, or add the flag the first time, and commit `compat/tested-versions.json` in a PR to `develop` that links the issue. It ships with the next release, and the watcher then closes the issue itself. (`Closes #12` in a PR description only works for PRs into the default branch, and this one goes to `develop`.)
 4. **It's broken:** see below.
 
 ## When an update breaks things
