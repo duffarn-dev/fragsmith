@@ -49,5 +49,6 @@ When the released version is broken (typically after a CS2 or HLAE update) and i
 ## When something goes wrong
 
 - **The workflow says "vX.Y.Z already exists".** `main` changed without a version bump. Nothing is published; bump the version and release again.
+- **The merge says "the base branch policy prohibits the merge".** A required check hasn't finished. Editing a PR's title or description runs `pr-title` again, so this happens right after fixing up the release PR's description. Wait for the check, then merge.
 - **The notes put something under "Other".** The PR had no type label. Fix the label on the merged PR, then edit the notes on the Releases page or regenerate them with `gh release edit`.
 - **Wrong release published.** Delete the release *and* its tag (`gh release delete vX.Y.Z --cleanup-tag`), fix, and merge again.
