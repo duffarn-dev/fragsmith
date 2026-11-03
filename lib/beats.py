@@ -160,4 +160,3 @@ def nearest_beat_before(target: float, beats: dict, tolerance: float) -> float |
     """Nearest beat <= target within the tolerance (we can trim, not extend)."""
     candidates = [t for t in beats["beat_times"] if target - tolerance <= t <= target]
     return max(candidates, default=None)
-
