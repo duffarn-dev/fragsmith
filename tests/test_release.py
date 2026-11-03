@@ -55,12 +55,18 @@ def test_pr_titles() -> None:
         ("chore(release): v0.2.0", "chore/release-0.2.0", "develop", {"chore", "skip-changelog"}),
         ("chore: release to main", "develop", "main", {"chore", "skip-changelog"}),
         ("fix: hotfix sync", "main", "develop", {"bug", "skip-changelog"}),
+        ("chore(compat): record CS2 1.41.9.5 as tested", "", "", {"chore", "upstream"}),
     ]
     for title, head, base, want in cases:
         got = labels_for(title, head, base)
         check(f"{title!r}", got == want, f"{sorted(got) if got else got}")
     for bad in ("Add vertical export", "feat:no space", "feature: x", "feat: ", "Feat: x", "fix(Scope): x"):
         check(f"rejects {bad!r}", labels_for(bad) is None)
+    # The notes put a PR in the first category it matches, so a chore(compat)
+    # PR only lands under Compatibility if that comes before Maintenance
+    notes = (ROOT / ".github" / "release.yml").read_text(encoding="utf-8")
+    check("Compatibility comes before Maintenance in the notes",
+          0 <= notes.find("labels: [upstream]") < notes.find("labels: [chore, ci]"))
 
 
 if __name__ == "__main__":
