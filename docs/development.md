@@ -96,7 +96,7 @@ PR titles follow [Conventional Commits](https://www.conventionalcommits.org/), b
 
 A breaking change, such as a renamed config key, gets a `!`: `feat!: rename [render].job_dir`. Describe the migration in the PR.
 
-Also accepted: `perf:` (counts as a feature), `refactor:` and `revert:` (maintenance), `build:` (CI). An optional lowercase scope goes in parentheses: `fix(render): ...`. The `release` scope (`chore(release): v0.2.0`) is reserved for version bumps and release PRs, which stay out of the release notes.
+Also accepted: `perf:` (counts as a feature), `refactor:` and `revert:` (maintenance), `build:` (CI). An optional lowercase scope goes in parentheses: `fix(render): ...`. The `release` scope (`chore(release): v0.2.0`) is reserved for version bumps and release PRs, which stay out of the release notes. The `compat` scope (`chore(compat): record CS2 1.41.9.5 as tested`) is for the PR that records a tested upstream version: it adds the `upstream` label, so the PR is listed under Compatibility.
 
 The `pr-title` check rejects other titles and sets the labels from the prefix (see [Labels](#labels)). To fix a rejected title, edit it on GitHub; the check runs again.
 
@@ -108,7 +108,7 @@ The `pr-title` check rejects other titles and sets the labels from the prefix (s
 | `bug` | something that doesn't work as documented | Fixes |
 | `docs` | documentation only | Docs |
 | `chore`, `ci` | cleanup, dependencies, automation | Maintenance |
-| `upstream` | a new CS2, HLAE, CS Demo Manager or demoparser2 version (opened by the watcher) | Compatibility |
+| `upstream` | a new CS2, HLAE, CS Demo Manager or demoparser2 version: the watcher's issues, and PRs with the `compat` scope | Compatibility |
 | `breaking` | changes config, CLI or output incompatibly | listed first |
 | `skip-changelog` | left out of the release notes | — |
 | `good first issue`, `help wanted` | invitations to contributors | — |
