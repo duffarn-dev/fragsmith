@@ -48,7 +48,7 @@ def test_frame() -> None:
                                    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2")
     check("portrait fills the frame and crops the center",
           PORTRAIT.normalize() == "scale=1080:1920:force_original_aspect_ratio=increase,"
-                                  "crop=1080:1920")
+                                  "crop=1080:1920,setsar=1")
     check("the tilt limit is the same for 16:9 and 9:16",
           abs(_max_tilt_degrees(1.7, LANDSCAPE) - _max_tilt_degrees(1.7, PORTRAIT)) < 1e-9)
 

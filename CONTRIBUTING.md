@@ -49,6 +49,7 @@ python tests/test_audio_sync.py
 python tests/test_kinetic.py
 python tests/test_sound_design.py
 python tests/test_hype_score.py
+python tests/test_transitions.py
 ```
 
 They need ffmpeg on your PATH. GitHub runs them on every pull request as well. See [tests/README.md](tests/README.md) for patterns worth reusing, such as mock clips at 720p30 instead of 1080p60.

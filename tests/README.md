@@ -21,6 +21,7 @@ Run them directly, no pytest needed:
     python tests/test_kinetic.py
     python tests/test_sound_design.py
     python tests/test_hype_score.py
+    python tests/test_transitions.py
 
 GitHub Actions runs every `tests/test_*.py` on each pull request (`.github/workflows/tests.yml`), so a new suite only needs to follow the same pattern: exit code 1 when anything fails.
 

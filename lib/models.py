@@ -78,7 +78,9 @@ class EditDecision(BaseModel):
     order: int
     slowmo_segments: list[SlowmoSegment]
     overlay_text: Optional[str]  # e.g. "1v4 CLUTCH"
-    transition_in: Literal["cut", "fade", "speed_ramp"]
+    # whip/zoom/glitch: a transition from the previous clip, if the style
+    # allows it ([effects].transitions); "cut" lets the style choose
+    transition_in: Literal["cut", "fade", "speed_ramp", "whip", "zoom", "glitch"]
     reasoning: str  # the Director must justify its choice
 
     # All default to off/empty, so behavior is deterministic and unchanged

@@ -19,8 +19,8 @@ preset = "hype"   # custom | clean | hype | cinematic
 |---|---|
 | `custom` | Your `[effects]` and `[editing]`, exactly as written. The default |
 | `clean` | Grade, vignette and beat cuts. No zooms, flashes, counters, replay or sound effects, and a lower intensity |
-| `hype` | Everything on and stronger: beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, kinetic text and counter, impact split, freeze, replay, louder sound effects, and a riser, a gap and a boom on the drop |
-| `cinematic` | Letterbox, film grain, slow-mo push-ins, a gentle kill zoom, a long freeze, the replay, and a riser and a gap before the drop. Nothing that shakes or flashes |
+| `hype` | Everything on and stronger: whip, zoom and glitch transitions, beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, kinetic text and counter, impact split, freeze, replay, louder sound effects, and a riser, a gap and a boom on the drop |
+| `cinematic` | Letterbox, film grain, zoom transitions, slow-mo push-ins, a gentle kill zoom, a long freeze, the replay, and a riser and a gap before the drop. Nothing that shakes or flashes |
 
 - **Only some switches are set.** A preset sets only the switches it names (the full list is in `lib/styles.py`). Everything else keeps your value. That includes `enabled` (still the master switch), your `lut`, and the quality settings `eased_ramps` and `smooth_slowmo`.
 - **For one film:** `python main.py run <demo> --style cinematic` (also `batch --style`).
@@ -58,6 +58,7 @@ preset = "hype"   # custom | clean | hype | cinematic
 | Headshot punch | `[effects].headshot_punch`, `headshot_punch_strength` | "Zoom in slowly, snap out fast" on headshots |
 | Impact split | `[effects].impact_split` | 3 frames of color-channel shift on big kills |
 | Flash transitions | `[effects].flash_transitions` | White flash into clips where the Director chose a hard cut |
+| Transitions | `[effects].transitions` | A transition on each change from one clip to the next, taking turns through the list: `whip` (a fast pan smeared sideways, 0.27 s), `zoom` (a push into the next clip, 0.33 s), `glitch` (a mosaic with a color split, 0.2 s). The beat stays on the cut: the transition is centered on it, so the film's timing and the drop don't move. The Claude Director can pick one per clip; `"fade"` and the replay keep their own entrance. Replaces the white flash where it's used. `[]` = hard cuts |
 | Wobble | `[effects].wobble` | Beat-synced shake. Off by default because it can feel restless |
 
 ## Overlays

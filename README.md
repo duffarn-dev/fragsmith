@@ -16,7 +16,7 @@ Point Fragsmith at a `.dem` file. It finds your best rounds, renders them from y
 
 - **Finds the highlights.** Multikills, aces, won clutches (detected from who's alive, not guessed), knife, zeus and AWP headshot moments, noscopes, wallbangs, jumpshots and kills through smoke, each called out on screen.
 - **Picks the order like an editor would.** Strong opener, build-up, best clip last. Use the built-in rules for free, or let Claude direct the film.
-- **Cuts on the beat.** Every cut snaps to the music, and the climax lands on the track's bass drop.
+- **Cuts on the beat.** Every cut snaps to the music, with a whip, zoom or glitch transition centered on the beat if you like, and the climax lands on the track's bass drop.
 - **Real slow-mo.** Slow-motion clips are rendered at 120 fps, so they're smooth instead of stuttery.
 - **Effects that hit the kills.** Kill zoom, dutch tilt, headshot punch, freeze frame, text and a kill counter that slam in, instant replay from the victim's POV, letterbox, color grade, film grain, whooshes and impacts with music ducking, and a riser, a beat of silence and a boom on the music's drop. Pick a style (`clean`, `hype`, `cinematic`) or turn each one on or off yourself: [docs/effects.md](docs/effects.md).
 - **Your own look.** Your images behind the intro and outro, your logo on the film, and a ready thumbnail of the climax kill.

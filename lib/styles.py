@@ -43,6 +43,7 @@ STYLES: dict[str, dict[str, dict]] = {
             "kinetic_text": False,
             "impact_split": False,
             "instant_replay": False,
+            "transitions": [],
         },
         "editing": {"sfx": False, "riser": False, "drop_gap": False, "drop_boom": False},
     },
@@ -75,6 +76,7 @@ STYLES: dict[str, dict[str, dict]] = {
             "kinetic_text": True,
             "impact_split": True,
             "instant_replay": True,
+            "transitions": ["whip", "zoom", "glitch"],
         },
         "editing": {
             "sfx": True,
@@ -114,6 +116,8 @@ STYLES: dict[str, dict[str, dict]] = {
             "kinetic_text": False,
             "impact_split": False,
             "instant_replay": True,
+            # a push, never a whip or a glitch
+            "transitions": ["zoom"],
         },
         # the build-up and the silence, but no boom: it's a film, not a club
         "editing": {
