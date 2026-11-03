@@ -12,7 +12,7 @@ Every merge to `main` is a release. The `release` workflow reads the version fro
 | only fixes | patch | 0.3.0 → 0.3.1 |
 | something breaking (a renamed config key, a changed CLI) | minor, and say so in the PR | 0.3.0 → 0.4.0 |
 
-## Release day (Friday)
+## Release day (Wednesday)
 
 Release day is a maximum, not a deadline. If nothing finished is on `develop`, skip the release.
 
@@ -39,7 +39,7 @@ The `chore(release)` PRs get the `skip-changelog` label automatically, so the no
 
 ## Hotfix
 
-When the released version is broken (typically after a CS2 or HLAE update) and it can't wait for Friday:
+When the released version is broken (typically after a CS2 or HLAE update) and it can't wait for Wednesday:
 
 1. `git switch main && git pull && git switch -c hotfix/short-name`
 2. Fix it **and** bump the patch version in the same branch (`0.2.0` → `0.2.1`).
@@ -49,5 +49,6 @@ When the released version is broken (typically after a CS2 or HLAE update) and i
 ## When something goes wrong
 
 - **The workflow says "vX.Y.Z already exists".** `main` changed without a version bump. Nothing is published; bump the version and release again.
+- **The merge says "the base branch policy prohibits the merge".** A required check hasn't finished. Editing a PR's title or description runs `pr-title` again, so this happens right after fixing up the release PR's description. Wait for the check, then merge.
 - **The notes put something under "Other".** The PR had no type label. Fix the label on the merged PR, then edit the notes on the Releases page or regenerate them with `gh release edit`.
 - **Wrong release published.** Delete the release *and* its tag (`gh release delete vX.Y.Z --cleanup-tag`), fix, and merge again.

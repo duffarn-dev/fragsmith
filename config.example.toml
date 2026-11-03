@@ -131,6 +131,9 @@ thumbnail = true               # thumbnail.jpg (1280x720) of the climax kill nex
 sfx = true                     # whoosh into clip changes + impact on big kills
 sfx_volume = 0.35              # SFX level in the mix (impact gets ×1.3)
 sfx_dir = "assets/sfx"         # your own .wav files here override; if missing, they're synthesized
+riser = false                  # a rising sweep into the music's drop (or into the climax clip without one)
+drop_gap = false               # a split second of silence just before the drop, so it hits harder
+drop_boom = false              # a sub boom on the drop
 
 [branding]
 # Your own look. Paths are relative to the Fragsmith folder unless absolute.

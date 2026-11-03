@@ -52,7 +52,7 @@ Every step prints OK, WARN or FAIL. The result ends with PASS or FAIL, and the d
 
 1. Update the tool on the render PC (the issue says how).
 2. Run `python main.py selftest` with a fresh demo.
-3. **It passes:** run it again with `--write-tested`, or add the flag the first time, and commit `compat/tested-versions.json` in a PR to `develop` that links the issue. It ships with the next release, and the watcher then closes the issue itself. (`Closes #12` in a PR description only works for PRs into the default branch, and this one goes to `develop`.)
+3. **It passes:** run it again with `--write-tested`, or add the flag the first time, and commit `compat/tested-versions.json` in a PR to `develop` that links the issue. Title it as the issue says, `chore(compat): record <tool> <version> as tested`: the `compat` scope lists it under Compatibility in the release notes. It ships with the next release, and the watcher then closes the issue itself. (`Closes #12` in a PR description only works for PRs into the default branch, and this one goes to `develop`.)
 4. **It's broken:** see below.
 
 ## When an update breaks things
