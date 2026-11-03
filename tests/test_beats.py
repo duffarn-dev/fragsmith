@@ -68,6 +68,40 @@ def test_detect_drops() -> None:
     check("flat signal gives no drops", _detect_drops(flat, SR, beat_grid) == [])
 
 
+def test_drop_hit() -> None:
+    print("the drop's hit, off the beat grid:")
+    beat_grid = [round(t, 3) for t in np.arange(0.5, 29.5, 0.5)]
+    # Seen in a Suno track: the drop hit 0.19 s after the beat it was found
+    # on, so the gap and the boom came before it, like a skipping record
+    y, _ = synth_drop_signal(quiet_s=15.2)
+    drops = _detect_drops(y, SR, beat_grid)
+    got = drops[0]["time_s"] if drops else None
+    check("a drop between two beats is placed on its hit (±10 ms)",
+          got is not None and abs(got - 15.2) <= 0.010, f"{got} s, hit at 15.2 s")
+
+    # a snare in the build-up is a short spike, not a step in level
+    snare = y.copy()
+    s0 = int(15.05 * SR)
+    snare[s0:s0 + int(0.025 * SR)] *= 12
+    drops = _detect_drops(snare, SR, beat_grid)
+    got = drops[0]["time_s"] if drops else None
+    check("a snare just before it isn't the hit",
+          got is not None and abs(got - 15.2) <= 0.010, f"{got} s")
+
+    # a drop that swells in over 2 s has no hit: it stays on its beat
+    rng = np.random.default_rng(3)
+    ramp = np.concatenate([
+        np.full(int(13 * SR), 0.03),
+        np.linspace(0.03, 0.4, int(2 * SR)),
+        np.full(int(15 * SR), 0.4),
+    ])
+    swell = (ramp * rng.standard_normal(len(ramp))).astype(np.float32)
+    drops = _detect_drops(swell, SR, beat_grid)
+    check("a drop that swells in stays on a beat",
+          bool(drops) and drops[0]["time_s"] in beat_grid,
+          f"{drops[0]['time_s'] if drops else None} s")
+
+
 def test_analyze_beats_end_to_end() -> None:
     print("analyze_beats (end to end with a synthetic wav):")
     y, drop_at = synth_drop_signal()
@@ -122,9 +156,14 @@ def test_shift_beats() -> None:
         and nearest_beat_before(9.0, beats, 0.75) is None,
     )
 
+    # the cut into the climax moves with the music like the beats do
+    s3 = shift_beats({**beats, "drop_cut_s": 20.19}, 9.0)
+    check("drop_cut_s is shifted", s3["drop_cut_s"] == 11.19)
+
 
 if __name__ == "__main__":
     test_detect_drops()
+    test_drop_hit()
     test_analyze_beats_end_to_end()
     test_shift_beats()
     print()

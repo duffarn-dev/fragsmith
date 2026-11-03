@@ -220,6 +220,36 @@ def main() -> None:
                   start is not None and abs(start - drop_a
                         - ds["predicted_error_ms"] / 1000) <= 0.150)
 
+        # -- a drop that hits between two beats -----------------------------
+        # A third of the Suno tracks hit more than 100 ms off the beat grid.
+        # Every cut lands on the same phase of the grid, so with only beats
+        # to snap to, a drop 0.18 s into a beat was never reached (seen)
+        print("a drop between two beats:")
+        missed = []
+        for frac in (0.05, 0.12, 0.19, 0.26, 0.33, 0.40, 0.47):
+            t = round(drop_a + frac, 3)
+            ds_f = plan_drop_sync(plan, candidates, clips, beats_grid([t]), cfg, hook_s)
+            if ds_f is None or abs(ds_f["predicted_error_ms"]) > 17:
+                missed.append(frac)
+        check("reached at every phase of the beat (±1 frame)", not missed,
+              f"missed at {missed} of a 0.5 s beat")
+        drop_off = round(drop_a + 0.19, 3)
+        ds_off = plan_drop_sync(plan, candidates, clips,
+                                beats_grid([drop_off]), cfg, hook_s)
+        check("finds a solution", ds_off is not None)
+        if ds_off:
+            check("the beats are unchanged", ds_off["beats"]["beat_times"]
+                  == beats_grid([])["beat_times"])
+            segs, cut_log_off, _ = build_segments(
+                plan, candidates, clips, tmp / "seg_off", ds_off["beats"], cfg, log,
+                context={"map": "de_test"},
+                timeline_start=hook_s + ds_off["intro_seconds"],
+            )
+            start = actual_climax_start(cut_log_off, "c3")
+            check("the climax starts on the hit (±1 frame)",
+                  start is not None and abs(start - ds_off["drop_timeline_s"]) <= 1 / 60 + 0.001,
+                  f"start {start:.3f} s vs drop {ds_off['drop_timeline_s']} s")
+
         # -- lever 2: drop far into the track → music offset -----------------
         print("plan_drop_sync, lever 2 (music offset):")
         drop_b = round(round((c0 + 20.0) / 0.5) * 0.5, 3)
