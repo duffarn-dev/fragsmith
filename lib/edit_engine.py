@@ -22,6 +22,8 @@ from lib.ffmpeg_util import (
     run_ffmpeg,
 )
 from lib.hype_score import LONG_SHOT_M
+from lib.kinetic import available as kinetic_available
+from lib.kinetic import kinetic_clip, movie_source, text_box
 from lib.models import EditDecision, EditPlan
 
 ENCODE_ARGS = [
@@ -369,10 +371,14 @@ def _build_filter(
     src_fps: float = 60.0,
     frame: Frame = LANDSCAPE,
     tags: list[tuple[float, str]] | None = None,
+    kinetic_dir: Path | None = None,
+    log_path: Path | None = None,
 ) -> tuple[str, str, str]:
     """filter_complex: trim/setpts/atempo per part + concat + effects +
     overlay + entry transition. src_fps: the source frame rate; high-fps
-    sources are slowed down with real frames, without minterpolate."""
+    sources are slowed down with real frames, without minterpolate.
+    kinetic_dir: draw the overlay text and the counter as kinetic text
+    (clips cached there) instead of drawtext; None = drawtext."""
     punch = effects.get("enabled", True) and effects.get("slowmo_punch", True)
     smooth = (
         effects.get("enabled", True)
@@ -460,7 +466,16 @@ def _build_filter(
         shift = max(2, round(5 * k))
         cond = "+".join(f"between(t,{t:.3f},{t + 0.05:.3f})" for t in impacts)
         vf.append(f"chromashift=cbh=-{shift}:crh={shift}:enable='{cond}'")
-    if decision.overlay_text:
+    # kinetic text clips laid over the picture after the effects:
+    # (clip, start, x, y, hold the last frame)
+    layers: list[tuple[Path, float, int, int, bool]] = []
+    if decision.overlay_text and kinetic_dir is not None:
+        # same place and window as the drawtext version (y is its top edge)
+        clip, cw, ch = kinetic_clip(decision.overlay_text, 88, 2.8, kinetic_dir, log_path)
+        _, th = text_box(decision.overlay_text, 88)
+        layers.append((clip, 0.4, round((frame.w - cw) / 2),
+                       round(frame.h * 0.72 + th / 2 - ch / 2), False))
+    elif decision.overlay_text:
         text = drawtext_escape(decision.overlay_text)
         if effects.get("enabled", True) and effects.get("animated_overlays", False):
             # the text slides up and fades in (0.4-0.65 s), fades out toward
@@ -483,7 +498,18 @@ def _build_filter(
                 f":x=(w-text_w)/2:y=h*0.72"
                 f":enable='between(t,0.4,3.2)'"
             )
-    if counter:
+    if counter and kinetic_dir is not None:
+        # Each tick slams in and is cut by the next one; the last holds its
+        # settled frame to the end of the segment (and through a freeze)
+        for i, (start, label) in enumerate(counter):
+            last = i + 1 == len(counter)
+            secs = 1.0 if last else max(1 / 60, counter[i + 1][0] - start)
+            clip, cw, ch = kinetic_clip(label, 110, secs, kinetic_dir, log_path,
+                                        fade_out=False)
+            tw, th = text_box(label, 110)
+            layers.append((clip, start, round(70 + tw / 2 - cw / 2),
+                           round(frame.h * 0.35 + th / 2 - ch / 2), last))
+    elif counter:
         # Kill counter that ticks up on every kill (output time) with an
         # alpha pop per tick. Left side: doesn't collide with the killfeed
         # (top right), overlay_text (center) or the lower third (bottom left).
@@ -543,11 +569,28 @@ def _build_filter(
         # Note: overlay_text sits at y=h*0.72 (~777 in 1080p) and clears the
         # bar (920).
         slide = "min(160,160*t/0.4)"
-        chains.append(f"[vc]{','.join(vf)}[vfx]")
+    after_fx = "[vfx]" if letterbox else "[vout]"
+    if layers:
+        # Kinetic text goes on after the effects (it shouldn't zoom, tilt or
+        # split along) and under the letterbox bar, like the drawtext did.
+        # setpts places each clip at its start; eof_action=pass removes it
+        # when it ends, repeat holds its last frame.
+        chains.append(f"[vc]{','.join(vf)}[vk0]")
+        for i, (clip, start, x, y, hold) in enumerate(layers):
+            last = i + 1 == len(layers)
+            out = f"{after_fx[:-1]}t]" if last else f"[vk{i + 1}]"
+            chains.append(f"{movie_source(clip)},setpts=PTS+{start:.3f}/TB[kt{i}]")
+            chains.append(
+                f"[vk{i}][kt{i}]overlay=x={x}:y={y}"
+                f":eof_action={'repeat' if hold else 'pass'}{out}"
+            )
+        # the overlay can hand on an RGB format (the logo's gbrp trap)
+        chains.append(f"{after_fx[:-1]}t]format=yuv420p{after_fx}")
+    else:
+        chains.append(f"[vc]{','.join(vf)}{after_fx}")
+    if letterbox:
         chains.append(f"color=black:s={frame.w}x160:r=60[lbb]")
         chains.append(f"[vfx][lbb]overlay=x=0:y='{frame.h}-{slide}'[vout]")
-    else:
-        chains.append(f"[vc]{','.join(vf)}[vout]")
     return ";".join(chains), "[vout]", "[ac]"
 
 
@@ -1083,6 +1126,17 @@ def build_segments(
     cut_log: list[dict] = []
     flags: list[str] = []
     climax_order = max((d.order for d in plan.decisions), default=0)
+
+    # Kinetic text needs Pillow; without it the text is drawn as before
+    kinetic_dir = None
+    if fx.get("enabled", True) and fx.get("kinetic_text", False):
+        if kinetic_available():
+            kinetic_dir = segments_dir / "kinetic"
+        else:
+            flags.append(
+                "kinetic_text is on, but Pillow isn't installed, so the text "
+                "was drawn plainly. Install it with: pip install -r requirements.txt"
+            )
     # if the Director explicitly picked a climax, it wins over the
     # "last clip" rule
     climax_ids = {d.clip_id for d in plan.decisions if d.is_climax}
@@ -1271,7 +1325,7 @@ def build_segments(
             freeze, hs_punches, [(s, e) for s, e, _ in micro],
             counter, lowerthird, impacts,
             src_fps=probe_fps(clip_path),  # high-fps source → real slow-mo
-            frame=frame, tags=tags,
+            frame=frame, tags=tags, kinetic_dir=kinetic_dir, log_path=log_path,
         )
         out_path = segments_dir / f"{decision.order:02d}_{decision.clip_id}.mp4"
         run_ffmpeg(
