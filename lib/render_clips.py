@@ -25,7 +25,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from lib.edit_engine import pick_replay_clip, wants_high_fps
+from lib.edit_engine import clip_framerates, pick_replay_clip
 from lib.models import EditPlan, Highlight
 
 
@@ -39,17 +39,14 @@ def build_render_job(
 ) -> dict:
     video = cfg.get("video", {})
     render_cfg = cfg.get("render", {})
-    fx = cfg.get("effects", {})
     # Instant replay: the replay clip gets an EXTRA sequence from the victim's
     # POV. The selection MUST match edit_engine.pick_replay_clip (same function).
     replay = pick_replay_clip(plan, candidates_by_id, cfg)
-    # Clips with slow-mo are rendered at high fps → real smooth slow-down.
-    # csdm has a GLOBAL framerate, so the worker splits the job into one
-    # pass per framerate (separate CS2 launch).
+    # Slow-mo and the replay go to high fps (real smooth slow-down), motion
+    # blur to its own, higher rate. csdm has a GLOBAL framerate, so the
+    # worker splits the job into one pass per framerate (separate CS2 launch).
     base_fps = int(video.get("framerate", 60))
-    high_fps = int(render_cfg.get("highfps_framerate", 0))
-    if high_fps <= base_fps:
-        high_fps = 0  # off (or misconfigured)
+    fps_by_clip = clip_framerates(plan, candidates_by_id, cfg)
     clips = []
     for d in sorted(plan.decisions, key=lambda d: d.order):
         cand = candidates_by_id[d.clip_id]
@@ -68,12 +65,9 @@ def build_render_job(
         if replay and replay[0] == d.clip_id and replay[1].victim_steamid:
             clip["alt_pov_steamid"] = replay[1].victim_steamid
             clip["alt_pov_name"] = replay[1].victim_name
-        # The replay clip always slows down the alternate angle (0.45×) — it
-        # and both its sequences go to high fps, in addition to slow-mo clips
-        if high_fps and (
-            wants_high_fps(d, cand, fx) or (replay and replay[0] == d.clip_id)
-        ):
-            clip["framerate"] = high_fps
+        # (both sequences of the replay clip share its frame rate)
+        if fps_by_clip[d.clip_id] != base_fps:
+            clip["framerate"] = fps_by_clip[d.clip_id]
         clips.append(clip)
     return {
         "schema_version": "1.3",  # 1.1: + true_view/show_xray · 1.2: + alt_pov · 1.3: + framerate per clip

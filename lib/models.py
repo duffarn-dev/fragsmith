@@ -68,6 +68,7 @@ EffectName = Literal[
     "letterbox", "freeze", "kill_zoom",
     "headshot_punch", "impact_split", "kill_counter",
     "replay",  # instant replay of the last kill from the victim's POV (max one clip)
+    "motion_blur",  # rendered at [render].motion_blur_framerate and blended
 ]
 
 

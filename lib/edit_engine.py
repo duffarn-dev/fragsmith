@@ -375,12 +375,15 @@ def _build_filter(
     tags: list[tuple[float, str]] | None = None,
     kinetic_dir: Path | None = None,
     log_path: Path | None = None,
+    blur_shutter: float | None = None,
 ) -> tuple[str, str, str]:
     """filter_complex: trim/setpts/atempo per part + concat + effects +
     overlay + entry transition. src_fps: the source frame rate; high-fps
     sources are slowed down with real frames, without minterpolate.
     kinetic_dir: draw the overlay text and the counter as kinetic text
-    (clips cached there) instead of drawtext; None = drawtext."""
+    (clips cached there) instead of drawtext; None = drawtext.
+    blur_shutter: motion blur with this shutter angle (degrees), made from
+    the source's real frames; None = none."""
     punch = effects.get("enabled", True) and effects.get("slowmo_punch", True)
     smooth = (
         effects.get("enabled", True)
@@ -401,6 +404,13 @@ def _build_filter(
             # duplicated frames. Only on slow parts: minterpolate is slow
             # and causes artifacts on smoke/particles (see learnings_runtime.md).
             vchain += ",minterpolate=fps=60:mi_mode=mci"
+        if blur_shutter:
+            # Motion blur: each output frame averages the source frames its
+            # shutter covers, before fps=60 picks them and before any
+            # effect. Fewer in slow-mo; 1 = sharp (a 60 fps source is never blurred)
+            n = blur_frames(src_fps, blur_shutter, speed)
+            if n > 1:
+                vchain += f",tmix=frames={n}"
         # normalize resolution AND fps BEFORE concat: the punch zoompan locks
         # its part to the frame size, concat requires the same size, and all
         # zoompan expressions after concat treat time as on/60 (sources ≠ 60
@@ -994,6 +1004,81 @@ def _climax_clip_id(plan: EditPlan) -> str | None:
     return explicit[0] if explicit else decisions[-1].clip_id
 
 
+MOTION_BLUR_MODES = ("off", "climax", "all")
+
+
+def wants_motion_blur(decision: EditDecision, plan: EditPlan, cfg: dict) -> bool:
+    """Should this clip get real motion blur ([render].motion_blur)? "climax"
+    = the film's climax clip, "all" = every clip; the Director can add or
+    remove it per clip (effects_on/effects_off), but "off" and
+    [effects].enabled = false are the master switch."""
+    mode = str(cfg.get("render", {}).get("motion_blur", "off")).lower()
+    if mode not in ("climax", "all") or not cfg.get("effects", {}).get("enabled", True):
+        return False
+    default = mode == "all" or decision.clip_id == _climax_clip_id(plan)
+    return _choose("motion_blur", default, set(decision.effects_on), set(decision.effects_off))
+
+
+def blur_frames(src_fps: float, shutter: float, speed: float) -> int:
+    """How many source frames make one 60 fps output frame with motion blur:
+    the shutter's share of 1/60 s of OUTPUT time, in source frames. At 480
+    fps and 180°, 4 at normal speed; in slow-mo the shutter covers less
+    source time, so 0.25x gets 1 (sharp, as with a real camera)."""
+    return max(1, round(src_fps * shutter / 360 / 60 * speed))
+
+
+def clip_framerates(plan: EditPlan, candidates_by_id: dict, cfg: dict) -> dict[str, int]:
+    """The frame rate each raw clip is rendered at, by clip_id (the replay's
+    victim-POV clip as <clip_id>_alt). Motion blur → [render].motion_blur_
+    framerate (its slow-mo uses those frames too); slow-mo or the replay →
+    highfps_framerate; else [video].framerate. The ONE place this is decided:
+    the render job, the phase-stop estimate and the selftest all read it."""
+    render_cfg = cfg.get("render", {})
+    fx = cfg.get("effects", {})
+    base = int(cfg.get("video", {}).get("framerate", 60))
+    high = int(render_cfg.get("highfps_framerate", 0))
+    high = high if high > base else 0
+    blur = int(render_cfg.get("motion_blur_framerate", 480))
+    replay = pick_replay_clip(plan, candidates_by_id, cfg)
+    fps: dict[str, int] = {}
+    for d in sorted(plan.decisions, key=lambda d: d.order):
+        cand = candidates_by_id.get(d.clip_id)
+        is_replay = bool(replay and replay[0] == d.clip_id)
+        if blur > base and wants_motion_blur(d, plan, cfg):
+            fps[d.clip_id] = blur
+        elif high and (wants_high_fps(d, cand, fx) or is_replay):
+            fps[d.clip_id] = high
+        else:
+            fps[d.clip_id] = base
+        if is_replay:
+            fps[f"{d.clip_id}_alt"] = fps[d.clip_id]
+    return fps
+
+
+# Measured on the render PC (1080p, six passes on 2026-11-02): render time
+# as a multiple of the footage's length, plus ~30 s per CS2 launch (one per
+# frame rate) and ~30 s per job; and the raw clips' size per minute. Other
+# rates scale from the nearest one below. (An early spike said 40x at 480
+# fps: its 3 s clip was mostly the CS2 launch.)
+RENDER_COST = {60: 1.6, 120: 3.3, 480: 11.0}
+RENDER_PASS_S = 30
+RENDER_JOB_S = 30
+RAW_MB_PER_MIN = {60: 130, 120: 165, 480: 550}
+
+
+def _per_fps(table: dict[int, float], fps: int) -> float:
+    known = max((f for f in table if f <= fps), default=min(table))
+    return table[known] * fps / known
+
+
+def render_cost(fps: int) -> float:
+    return _per_fps(RENDER_COST, fps)
+
+
+def raw_mb_per_min(fps: int) -> float:
+    return _per_fps(RAW_MB_PER_MIN, fps)
+
+
 def _simulate_timeline(
     plan: EditPlan,
     candidates_by_id: dict,
@@ -1475,6 +1560,11 @@ def build_segments(
             else None
         )
 
+        src_fps = probe_fps(clip_path)
+        blur_shutter = (
+            float(cfg.get("render", {}).get("motion_blur_shutter", 180))
+            if wants_motion_blur(decision, plan, cfg) else None
+        )
         # A transition in replaces the white flash
         kind_in = trans_in.get(decision.clip_id) if prev_tail else None
         kind_out = trans_out.get(decision.clip_id)
@@ -1485,8 +1575,9 @@ def build_segments(
             beat_ctx, letterbox, kill_fx,
             freeze, hs_punches, [(s, e) for s, e, _ in micro],
             counter, lowerthird, impacts,
-            src_fps=probe_fps(clip_path),  # high-fps source → real slow-mo
+            src_fps=src_fps,  # high-fps source → real slow-mo
             frame=frame, tags=tags, kinetic_dir=kinetic_dir, log_path=log_path,
+            blur_shutter=blur_shutter,
         )
         out_path = segments_dir / f"{decision.order:02d}_{decision.clip_id}.mp4"
         tail_path = segments_dir / f"{decision.order:02d}_{decision.clip_id}_tail.mkv"
@@ -1545,6 +1636,10 @@ def build_segments(
                 # where in the file the clip starts (the beat), for the whoosh
                 "cut_at_s": round(d_in / 2, 3),
                 "transition_in": kind_in,
+                # frames blended per output frame at normal speed (1 = none)
+                "motion_blur_frames": (
+                    blur_frames(src_fps, blur_shutter, 1.0) if blur_shutter else 1
+                ),
             }
         )
         timeline_pos += actual

@@ -45,6 +45,16 @@ job_dir = ""
 # disk for those clips. 0 = off (everything renders at [video].framerate).
 highfps_framerate = 120
 
+# Real motion blur: the clip is rendered at motion_blur_framerate and each
+# output frame blends the frames its shutter covers (180 = half of 1/60 s,
+# as on a film camera; slow-mo stays sharp). "climax" = the film's climax
+# clip, "all" = every clip, "off". Costs ~11x the clip's length in render
+# time at 480 fps (a 15 s climax: ~3 min, twice that with the replay's
+# victim angle) and ~4x the disk of a 60 fps clip.
+motion_blur = "off"
+motion_blur_framerate = 480
+motion_blur_shutter = 180
+
 # trueView gives the correct POV body/arms in HLAE. UNVERIFIED on recent
 # CS2 versions: check that the crosshair/killfeed survive on the first render
 # and note the result in learnings_runtime.md. X-ray is set automatically per

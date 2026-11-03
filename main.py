@@ -232,39 +232,38 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
 
     # --- PHASE STOP: show edit plan + estimates, wait for approval ---------
-    from lib.edit_engine import pick_replay_clip, wants_high_fps
+    from lib.edit_engine import (
+        RENDER_JOB_S,
+        RENDER_PASS_S,
+        clip_framerates,
+        raw_mb_per_min,
+        render_cost,
+        wants_motion_blur,
+    )
 
     by_id = {c.clip_id: c for c in candidates}
     chosen = sorted(plan.decisions, key=lambda d: d.order)
     total_sec = sum(by_id[d.clip_id].duration_seconds for d in chosen)
 
-    # Slow-mo clips are rendered at high fps — same selection as step 4 makes
-    fx = cfg.get("effects", {})
+    # The frame rate per clip: the same function step 4 uses
     base_fps = int(cfg.get("video", {}).get("framerate", 60))
-    high_fps = int(cfg.get("render", {}).get("highfps_framerate", 0))
-    if high_fps <= base_fps:
-        high_fps = 0
-    replay = pick_replay_clip(plan, by_id, cfg)
-    highfps_ids = {
-        d.clip_id for d in chosen
-        if high_fps and (
-            wants_high_fps(d, by_id[d.clip_id], fx)
-            or (replay and replay[0] == d.clip_id)
-        )
-    }
-    high_sec = sum(by_id[cid].duration_seconds for cid in highfps_ids)
+    fps_by_clip = clip_framerates(plan, by_id, cfg)
+    blur_ids = {d.clip_id for d in chosen if wants_motion_blur(d, plan, cfg)}
 
-    # Rough estimates: rendering ~2x real time + startup; raw clips ~40 MB/min
-    # at 1080p60. High-fps clips scale ~linearly with fps (more frames), and
-    # two passes means one extra CS2 launch (~2 min). Two passes only when
-    # the film mixes base-fps and high-fps clips.
-    two_passes = bool(highfps_ids) and len(highfps_ids) < len(chosen)
-    fps_scale = high_fps / base_fps if high_fps else 1.0
+    # Estimates from measured rates (see RENDER_COST): render time per frame
+    # rate, the replay's victim POV included, + a CS2 launch per frame rate;
+    # the raw clips' size per minute at each rate.
+    def clip_sec(cid: str) -> float:
+        return by_id[cid.removesuffix("_alt")].duration_seconds
+
+    passes = len(set(fps_by_clip.values()))
     est_render_min = (
-        total_sec * 2 + high_sec * 2 * (fps_scale - 1)
-        + 120 + (120 if two_passes else 0)
+        sum(clip_sec(cid) * render_cost(f) for cid, f in fps_by_clip.items())
+        + RENDER_PASS_S * passes + RENDER_JOB_S
     ) / 60
-    est_disk_mb = (total_sec + high_sec * (fps_scale - 1)) / 60 * 40
+    est_disk_mb = sum(
+        clip_sec(cid) / 60 * raw_mb_per_min(f) for cid, f in fps_by_clip.items()
+    )
 
     print()
     print("=" * 64)
@@ -281,19 +280,23 @@ def cmd_run(args: argparse.Namespace) -> int:
             extras.append(f'"{d.overlay_text}"')
         if d.slowmo_segments:
             extras.append(f"{len(d.slowmo_segments)} slow-mo")
-        if d.clip_id in highfps_ids:
-            extras.append(f"{high_fps} fps")
+        if fps_by_clip[d.clip_id] != base_fps:
+            extras.append(f"{fps_by_clip[d.clip_id]} fps")
+        if d.clip_id in blur_ids:
+            extras.append("motion blur")
         print(
             f"  {d.order:>2} {d.clip_id:<22} {c.hype_score:>6.2f} "
             f"{c.duration_seconds:>6.1f}  {', '.join(extras)}"
         )
     if plan.dropped_clip_ids:
         print(f"  Dropped: {', '.join(plan.dropped_clip_ids)}")
-    if highfps_ids:
+    high = sorted(cid for cid in fps_by_clip
+                  if fps_by_clip[cid] != base_fps and not cid.endswith("_alt"))
+    if high:
         print(
-            f"  {len(highfps_ids)} clip(s) rendered at {high_fps} fps "
-            f"(real smooth slow-mo)"
-            + (" — rendering runs in 2 passes." if two_passes else ".")
+            f"  {len(high)} clip(s) rendered above {base_fps} fps (real slow-mo"
+            + (", motion blur" if blur_ids else "") + ")"
+            + (f" — rendering runs in {passes} passes." if passes > 1 else ".")
         )
     print(
         f"  Total clip time: {total_sec:.0f} s | rough render estimate: "
@@ -312,7 +315,7 @@ def cmd_render(args: argparse.Namespace) -> int:
     job that starts CS2 rendering.
     """
     read_learnings()
-    cfg = load_config()
+    cfg = getattr(args, "cfg", None) or load_config()  # the selftest passes its own
 
     run_dir = Path(args.run_dir)
     if not run_dir.is_absolute():
@@ -344,14 +347,16 @@ def cmd_render(args: argparse.Namespace) -> int:
     )
 
     job = build_render_job(run_id, plan, candidates_by_id, pov_steamid, pov_name, cfg)
-    high = [c for c in job["clips"] if c.get("framerate")]
-    if high:
-        two_passes = len(high) < len(job["clips"])
-        print(
-            f"{len(high)} clip(s) rendered at {high[0]['framerate']} fps "
-            f"({', '.join(c['clip_id'] for c in high)})"
-            + (" — 2 render passes (one extra CS2 launch)." if two_passes else ".")
-        )
+    # one CS2 launch per frame rate (clips without one use the base rate)
+    by_rate: dict[int, list[str]] = {}
+    for c in job["clips"]:
+        by_rate.setdefault(c.get("framerate", 0), []).append(c["clip_id"])
+    for rate, ids in sorted(by_rate.items()):
+        if rate:
+            print(f"{len(ids)} clip(s) rendered at {rate} fps ({', '.join(ids)})")
+    if len(by_rate) > 1:
+        print(f"{len(by_rate)} render passes ({len(by_rate) - 1} extra CS2 launch"
+              f"{'es' if len(by_rate) > 2 else ''}).")
     n_alt = sum(1 for c in job["clips"] if c.get("alt_pov_steamid"))
     if n_alt:
         alt = next(c for c in job["clips"] if c.get("alt_pov_steamid"))
@@ -452,7 +457,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
     """Steps 5-7: beats + editing + assembly. Requires raw clips (step 4) in
     <run-dir>/03-raw-clips/ (or --clips)."""
     read_learnings()
-    cfg = load_config()
+    cfg = getattr(args, "cfg", None) or load_config()  # the selftest passes its own
 
     run_dir = Path(args.run_dir)
     if not run_dir.is_absolute():

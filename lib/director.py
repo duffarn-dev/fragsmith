@@ -61,6 +61,9 @@ Effect control (optional, per clip):
   "replay" (instant replay: the last kill rewinds and is shown in slow-mo
   from the VICTIM's point of view — default on the climax clip if it has 3+
   kills or a clutch; at most ONE clip can have replay in effects_on).
+  "motion_blur" (real motion blur from a 480 fps render — default only on
+  the climax clip, and only if the style has it; it costs ~11x the clip's
+  length in render time, so add it to at most one more clip, a short one).
   The default rules are good: use this ONLY with a concrete reason (e.g.
   freeze on a 3k that ends the film, letterbox off on a hectic clip, replay
   on the film's single craziest kill). Never numeric parameters — only choices.
