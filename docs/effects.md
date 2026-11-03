@@ -65,6 +65,7 @@ preset = "hype"   # custom | clean | hype | cinematic
 | Effect | Config | What it does |
 |---|---|---|
 | Kill counter | `[effects].kill_counter` | Counter ticking 1 → 2 → 3 → 4K / ACE on each kill, for clips with 3+ kills |
+| Kill tags | `[effects].kill_tags` | A callout under the crosshair on a special kill: NOSCOPE, WALLBANG, THROUGH SMOKE, JUMPSHOT, BLIND, or the distance of a long shot (35 m+). Up to two per kill, in amber, for about 1 s. Read from the demo's own kill events, so it's never a guess. Special kills also score higher, and a noscope, jumpshot or blind kill gets a clip of its own (a wallbang or smoke kill needs a headshot for that). On in `hype`, off in `clean` and `cinematic` |
 | Lower third | `[effects].lowerthird` | Small context line bottom-left: map · round · 1vX |
 | Animated overlays | `[effects].animated_overlays` | Overlay text slides up and fades instead of popping on and off |
 
