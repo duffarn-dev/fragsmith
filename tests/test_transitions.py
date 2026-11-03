@@ -24,6 +24,7 @@ from lib.edit_engine import (  # noqa: E402
     PORTRAIT,
     TRANSITIONS,
     _simulate_timeline,
+    _timing_plan,
     build_segments,
     pick_transitions,
 )
@@ -225,6 +226,42 @@ def test_timeline(tmp: Path) -> None:
               f"{color:.2f}")
 
 
+def test_planned_in_frames(tmp: Path) -> None:
+    """Drop sync plans with _simulate_timeline, and the build cuts a clip
+    with a transition in whole frames. c1 is planned 2 ms past a frame and
+    comes out 2 ms short; c2's planned end is then 1 ms past a beat in the
+    plan but 1 ms before it in the build, which snaps to the beat before
+    (seen: planned on the drop, built 602 ms before it)."""
+    print("the plan rounds to whole frames like the build")
+    clips = tmp / "clips"
+    clips.mkdir()
+    for cid in ("c1", "c2", "c3"):
+        make_clip(clips / f"{cid}.mp4", 6.0)
+    cands = {
+        cid: Highlight(clip_id=cid, start_tick=0, end_tick=384, player_steamid="765me",
+                       kill_count=2, kind="multikill", hype_score=3.0, round=i + 1,
+                       duration_seconds=6.0, player_name="Tester")
+        for i, cid in enumerate(("c1", "c2", "c3"))
+    }
+    plan = EditPlan(demo_path="mock.dem", music_track="mock.mp3", intro_text="T",
+                    outro_text="GG", dropped_clip_ids=[],
+                    decisions=[decision("c1", 1), decision("c2", 2), decision("c3", 3)])
+    cfg = cfg_with(["whip"])
+    out = [_timing_plan(d, cands[d.clip_id], probe_duration(clips / f"{d.clip_id}.mp4"),
+                        cfg["effects"])["out_duration"] for d in plan.decisions[:2]]
+    b1 = TIMELINE_START + round((out[0] - 0.3) * 60) / 60 + 0.002
+    b2 = b1 + out[1] - 0.001
+    beats = {"duration_seconds": 60.0, "bpm": 120.0, "drops": [],
+             "beat_times": [b1, b2 - 0.5, b2] + [b2 + 0.5 * k for k in range(1, 20)]}
+    sim_start, _ = _simulate_timeline(plan, cands, clips, beats, cfg, TIMELINE_START, {})
+    _, log, _ = build_segments(plan, cands, clips, tmp / "s", beats, cfg, tmp / "ffmpeg.log",
+                               timeline_start=TIMELINE_START)
+    real_start = log[-1]["timeline_end_s"] - log[-1]["segment_duration_s"]
+    check("the planned climax start holds (±1 frame)",
+          sim_start is not None and abs(sim_start - real_start) <= FRAME + 1e-3,
+          f"{sim_start} vs {real_start:.3f}")
+
+
 def test_portrait_replay(tmp: Path) -> None:
     """9:16 with a transition into a climax that gets the instant replay:
     the replay joins the segment to the replay source, which needs the
@@ -268,6 +305,8 @@ if __name__ == "__main__":
     test_pick()
     with tempfile.TemporaryDirectory() as t:
         test_timeline(Path(t))
+    with tempfile.TemporaryDirectory() as t:
+        test_planned_in_frames(Path(t))
     with tempfile.TemporaryDirectory() as t:
         test_portrait_replay(Path(t))
     print()

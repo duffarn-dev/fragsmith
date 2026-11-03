@@ -927,6 +927,15 @@ def _simulate_timeline(
     tolerance = float(editing.get("beat_tolerance_seconds", 0.75))
     target_id = _climax_clip_id(plan)
     replay_pick = pick_replay_clip(plan, candidates_by_id, cfg)
+    # the clips build_segments cuts in whole frames: those with a transition
+    rendered = [
+        d for d in sorted(plan.decisions, key=lambda d: d.order)
+        if (clips_dir / f"{d.clip_id}.mp4").exists()
+    ]
+    trans_in = pick_transitions(rendered, fx, replay_pick[0] if replay_pick else None)
+    framed = set(trans_in) | {
+        prev.clip_id for prev, d in zip(rendered, rendered[1:]) if d.clip_id in trans_in
+    }
 
     climax_start: float | None = None
     pos = timeline_start
@@ -943,11 +952,16 @@ def _simulate_timeline(
         tp = _timing_plan(d, cand, duration, fx)
         desired_end = pos + tp["out_duration"]
         snapped = nearest_beat_before(desired_end, beats, tolerance)
-        pos = (
+        end = (
             snapped
             if snapped is not None and snapped - pos >= 2.0
             else desired_end
         )
+        # A clip with a transition is cut to the nearest whole frame, and the
+        # next snap starts from there. Round the same way: a cut planned a
+        # hair past its beat lands a hair before it in the build, and snaps
+        # a beat early (seen: planned on the drop, built 602 ms before it)
+        pos = pos + round((end - pos) * 60) / 60 if d.clip_id in framed else end
         # the replay segment right after its clip pushes the timeline too
         if replay_pick and replay_pick[0] == d.clip_id:
             src = clips_dir / f"{d.clip_id}_alt.mp4"
