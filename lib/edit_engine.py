@@ -21,6 +21,7 @@ from lib.ffmpeg_util import (
     probe_fps,
     run_ffmpeg,
 )
+from lib.hype_score import LONG_SHOT_M
 from lib.kinetic import available as kinetic_available
 from lib.kinetic import kinetic_clip, movie_source, text_box
 from lib.models import EditDecision, EditPlan
@@ -369,6 +370,7 @@ def _build_filter(
     impacts: list[float] | None = None,
     src_fps: float = 60.0,
     frame: Frame = LANDSCAPE,
+    tags: list[tuple[float, str]] | None = None,
     kinetic_dir: Path | None = None,
     log_path: Path | None = None,
 ) -> tuple[str, str, str]:
@@ -520,6 +522,20 @@ def _build_filter(
                 f":x=70:y=h*0.35"
                 f":enable='between(t,{start:.3f},{end:.3f})'"
                 f":alpha='min(1,(t-{start:.3f})/0.15)'"
+            )
+    if tags:
+        # Kill tags (NOSCOPE, WALLBANG, ...) pop in just under the crosshair
+        # on their kill and fade after ~1 s: amber, so they read as a callout,
+        # not as the overlay text (center, 72%) or the counter (left)
+        for start, label in tags:
+            vf.append(
+                f"drawtext=fontfile='{FONT_FILE}'"
+                f":text='{drawtext_escape(label)}':expansion=none"
+                f":fontsize=46:fontcolor=0xFFB347:borderw=4:bordercolor=black"
+                f":x=(w-text_w)/2:y=h*0.57"
+                f":enable='between(t,{start:.3f},{start + 1.1:.3f})'"
+                f":alpha='if(lt(t-{start:.3f},0.1),(t-{start:.3f})/0.1,"
+                f"if(lt(t-{start:.3f},0.85),1,max(0,(1.1-(t-{start:.3f}))/0.25)))'"
             )
     if lowerthird:
         # Subtle context line (map · round · 1vX) in the bottom left, short
@@ -695,6 +711,23 @@ def _build_replay_segment(
         label,
     )
     return probe_duration(out_path)
+
+
+def kill_tag(km) -> str | None:
+    """The callout for a kill: up to two details, most special first
+    ("NOSCOPE · THROUGH SMOKE"), a long shot as "42 M"."""
+    labels = [
+        text for flag, text in (
+            ("noscope", "NOSCOPE"), ("wallbang", "WALLBANG"),
+            ("through_smoke", "THROUGH SMOKE"), ("jumpshot", "JUMPSHOT"),
+            ("blind", "BLIND"),
+        )
+        if getattr(km, flag, False)
+    ]
+    distance = float(getattr(km, "distance_m", 0.0) or 0.0)
+    if distance >= LONG_SHOT_M:
+        labels.append(f"{distance:.0f} M")
+    return "  ·  ".join(labels[:2]) or None
 
 
 def _choose(name: str, default: bool, d_on: set, d_off: set) -> bool:
@@ -913,6 +946,52 @@ def outro_seconds(cfg: dict) -> float:
 DROP_INTRO_MIN_S = 1.5
 DROP_INTRO_EXTRA_MAX_S = 4.0
 DROP_CONVERGED_S = 0.02
+DROP_SOLVE_STEPS = 12
+# A drop is hit when the climax starts this close to it. Not the beat
+# tolerance: a whole beat (0.6 s at 100 BPM) is inside that, and a climax
+# a beat late puts the gap and the boom on the clip before it
+DROP_MAX_ERROR_S = 0.1
+
+
+def _solve_drop(
+    err_at, x: float, lo: float | None = None, hi: float | None = None
+) -> float | None:
+    """The lever value x (intro length or music offset) that puts the
+    climax start on the drop. err_at(x) is the drop's timeline position
+    minus the climax start (None if the climax can't be placed); it only
+    falls as x grows. The cuts snap to the beat grid, so the error moves a
+    whole beat at a time: a plain step of x += error can jump past the drop
+    beat and back. Once the error has had both signs, bisect between them,
+    which finds the drop beat if any x reaches it. It may not: the cut into
+    the climax snaps from where the clip before it snapped, so it can skip
+    a beat (seen at 99 BPM: from 604 ms early straight to 581 ms late).
+    Returns the x with the smallest error seen, None if none could be."""
+    best: tuple[float, float] | None = None  # (x, error)
+    below = above = None  # largest x with the error > 0, smallest with < 0
+    for _ in range(DROP_SOLVE_STEPS):
+        err = err_at(x)
+        if err is None:
+            break
+        if best is None or abs(err) < abs(best[1]):
+            best = (x, err)
+        if abs(err) <= DROP_CONVERGED_S:
+            break
+        if err > 0:
+            below = x if below is None else max(below, x)
+        else:
+            above = x if above is None else min(above, x)
+        if below is not None and above is not None:
+            nxt = (below + above) / 2
+        else:
+            nxt = x + err
+        if lo is not None:
+            nxt = max(lo, nxt)
+        if hi is not None:
+            nxt = min(hi, nxt)
+        if abs(nxt - x) < 0.005:
+            break
+        x = nxt
+    return None if best is None else best[0]
 
 
 def plan_drop_sync(
@@ -974,36 +1053,25 @@ def plan_drop_sync(
         drop_t = float(drop["time_s"])
         r = drop_t - c0
 
+        def intro_err(intro: float) -> float | None:
+            c = climax_start(beats, intro)
+            return None if c is None else drop_t - c
+
+        def offset_err(off: float) -> float | None:
+            c = climax_start(shift_beats(beats, off), base_intro)
+            return None if c is None else (drop_t - off) - c
+
         # Lever 1: intro adjustment, the drop is close to the natural climax
         if lo - base_intro - tolerance <= r <= hi - base_intro + tolerance:
-            intro = min(hi, max(lo, base_intro + r))
-            for _ in range(6):
-                c = climax_start(beats, intro)
-                if c is None:
-                    break
-                err = drop_t - c
-                if abs(err) <= DROP_CONVERGED_S:
-                    break
-                new_intro = min(hi, max(lo, intro + err))
-                if abs(new_intro - intro) < 0.005:
-                    break
-                intro = new_intro
-            c = climax_start(beats, intro)
-            if c is not None and abs(c - drop_t) <= tolerance:
+            intro = _solve_drop(intro_err, min(hi, max(lo, base_intro + r)), lo, hi)
+            c = None if intro is None else climax_start(beats, intro)
+            if c is not None and abs(c - drop_t) <= DROP_MAX_ERROR_S:
                 return result(beats, intro, 0.0, "intro", drop_t, c - drop_t)
 
         # Lever 2: music offset, the drop is far INTO the track
         if r > 0:
-            off = r
-            for _ in range(6):
-                c = climax_start(shift_beats(beats, off), base_intro)
-                if c is None or off <= 0:
-                    break
-                err = (drop_t - off) - c
-                if abs(err) <= DROP_CONVERGED_S:
-                    break
-                off += err
-            if off > 0:
+            off = _solve_drop(offset_err, r, lo=0.0)
+            if off is not None and off > 0:
                 shifted = shift_beats(beats, off)
                 c = climax_start(shifted, base_intro)
                 # the rest of the track must cover the whole film, or the
@@ -1016,7 +1084,7 @@ def plan_drop_sync(
                 music_left = float(beats.get("duration_seconds", 0.0)) - off
                 if (
                     c is not None
-                    and abs(c - (drop_t - off)) <= tolerance
+                    and abs(c - (drop_t - off)) <= DROP_MAX_ERROR_S
                     and music_left >= film_end
                 ):
                     return result(
@@ -1212,6 +1280,17 @@ def build_segments(
                 counter.append((t_out, label))
             counter = counter or None
 
+        # Kill tags: the style details of each kill, in output time
+        tags = None
+        if fx_on and fx.get("kill_tags", False) and kills:
+            tags = []
+            for km in kills:
+                label = kill_tag(km)
+                t_out = _out_time(km.offset_s)
+                if label and 0.2 < t_out < target_duration - 0.4:
+                    tags.append((t_out, label))
+            tags = tags or None
+
         # context line from Highlight fields (never from the Director);
         # missing fields are skipped, never an empty "None"
         lowerthird = None
@@ -1246,7 +1325,7 @@ def build_segments(
             freeze, hs_punches, [(s, e) for s, e, _ in micro],
             counter, lowerthird, impacts,
             src_fps=probe_fps(clip_path),  # high-fps source → real slow-mo
-            frame=frame, kinetic_dir=kinetic_dir, log_path=log_path,
+            frame=frame, tags=tags, kinetic_dir=kinetic_dir, log_path=log_path,
         )
         out_path = segments_dir / f"{decision.order:02d}_{decision.clip_id}.mp4"
         run_ffmpeg(

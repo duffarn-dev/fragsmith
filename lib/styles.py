@@ -37,13 +37,14 @@ STYLES: dict[str, dict[str, dict]] = {
             "headshot_punch": False,
             "headshot_micro_slowmo": False,
             "kill_counter": False,
+            "kill_tags": False,
             "lowerthird": True,
             "animated_overlays": True,
             "kinetic_text": False,
             "impact_split": False,
             "instant_replay": False,
         },
-        "editing": {"sfx": False},
+        "editing": {"sfx": False, "riser": False, "drop_gap": False, "drop_boom": False},
     },
     # Everything on and stronger: the classic fragmovie.
     "hype": {
@@ -68,13 +69,20 @@ STYLES: dict[str, dict[str, dict]] = {
             "headshot_punch_strength": 1.2,
             "headshot_micro_slowmo": True,
             "kill_counter": True,
+            "kill_tags": True,
             "lowerthird": True,
             "animated_overlays": True,
             "kinetic_text": True,
             "impact_split": True,
             "instant_replay": True,
         },
-        "editing": {"sfx": True, "sfx_volume": 0.45},
+        "editing": {
+            "sfx": True,
+            "sfx_volume": 0.45,
+            "riser": True,
+            "drop_gap": True,
+            "drop_boom": True,
+        },
     },
     # Film look: letterbox, grain, slow pushes, long freezes, the replay.
     # Nothing that shakes or flashes.
@@ -100,13 +108,21 @@ STYLES: dict[str, dict[str, dict]] = {
             "headshot_punch": False,
             "headshot_micro_slowmo": False,
             "kill_counter": False,
+            "kill_tags": False,
             "lowerthird": True,
             "animated_overlays": True,
             "kinetic_text": False,
             "impact_split": False,
             "instant_replay": True,
         },
-        "editing": {"sfx": True, "sfx_volume": 0.25},
+        # the build-up and the silence, but no boom: it's a film, not a club
+        "editing": {
+            "sfx": True,
+            "sfx_volume": 0.25,
+            "riser": True,
+            "drop_gap": True,
+            "drop_boom": False,
+        },
     },
 }
 

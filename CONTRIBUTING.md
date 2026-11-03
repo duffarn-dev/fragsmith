@@ -44,8 +44,10 @@ python tests/test_styles.py
 python tests/test_branding.py
 python tests/test_thumbnail.py
 python tests/test_frame.py
+python tests/test_kill_tags.py
 python tests/test_audio_sync.py
 python tests/test_kinetic.py
+python tests/test_sound_design.py
 python tests/test_hype_score.py
 ```
 

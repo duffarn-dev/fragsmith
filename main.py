@@ -463,7 +463,13 @@ def cmd_finish(args: argparse.Namespace) -> int:
         print(f"ERROR: cannot find {plan_path} — run 'run' first.")
         return 1
 
-    from lib.assemble import assemble, build_intro_hook, write_report
+    from lib.assemble import (
+        assemble,
+        build_intro_hook,
+        drop_cue,
+        drop_cue_times,
+        write_report,
+    )
     from lib.beats import analyze_beats
     from lib.edit_engine import build_segments, plan_drop_sync
     from lib.ffmpeg_util import FfmpegError, probe_duration
@@ -643,6 +649,12 @@ def cmd_finish(args: argparse.Namespace) -> int:
             k: v for k, v in drop_info.items() if k != "beats"
         }
 
+    # The riser, gap and boom go on the drop, or on the climax clip without one
+    cue = drop_cue(plan, cut_log, drop_info, beats.get("bpm"))
+    cue_times = drop_cue_times(cue, cfg)
+    if cue_times:
+        beats_used = {**beats_used, "drop_cues": cue_times}
+
     print("Step 7: assembly (intro, music mix, export) ...")
     try:
         final = assemble(
@@ -650,7 +662,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
             candidates_by_id=candidates_by_id, clips_dir=clips_dir,
             events=events, cut_log=cut_log,
             hook_files=hooks, intro_seconds=intro_s,
-            music_offset=music_offset,
+            music_offset=music_offset, drop_cue=cue,
         )
     except FfmpegError as exc:
         print(f"STOPPED in step 7: {exc}")
@@ -694,6 +706,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
                 events=events, cut_log=vcut_log, hook_files=vhooks,
                 intro_seconds=intro_s, music_offset=music_offset,
                 frame=PORTRAIT, final_name="final-vertical.mp4", work_dir=vdir,
+                drop_cue=cue,
             )
         except FfmpegError as exc:  # the landscape film is done either way
             flags.append(f"No vertical film: {str(exc).splitlines()[0]}")
