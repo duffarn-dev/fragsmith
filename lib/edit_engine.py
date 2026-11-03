@@ -23,7 +23,7 @@ from lib.ffmpeg_util import (
 )
 from lib.hype_score import LONG_SHOT_M
 from lib.kinetic import available as kinetic_available
-from lib.kinetic import AMBER, kinetic_clip, movie_source, text_box
+from lib.kinetic import kinetic_clip, movie_source, text_animation, text_box, text_color
 from lib.models import EditDecision, EditPlan
 
 ENCODE_ARGS = [
@@ -481,9 +481,12 @@ def _build_filter(
     # kinetic text clips laid over the picture after the effects:
     # (clip, start, x, y, hold the last frame)
     layers: list[tuple[Path, float, int, int, bool]] = []
+    # the text's accent color and animation ([effects].text_color/_animation)
+    look = {"accent": text_color(effects), "animation": text_animation(effects)}
     if decision.overlay_text and kinetic_dir is not None:
         # same place and window as the drawtext version (y is its top edge)
-        clip, cw, ch = kinetic_clip(decision.overlay_text, 88, 2.8, kinetic_dir, log_path)
+        clip, cw, ch = kinetic_clip(decision.overlay_text, 88, 2.8, kinetic_dir, log_path,
+                                    **look)
         _, th = text_box(decision.overlay_text, 88)
         layers.append((clip, 0.4, round((frame.w - cw) / 2),
                        round(frame.h * 0.72 + th / 2 - ch / 2), False))
@@ -517,7 +520,7 @@ def _build_filter(
             last = i + 1 == len(counter)
             secs = 1.0 if last else max(1 / 60, counter[i + 1][0] - start)
             clip, cw, ch = kinetic_clip(label, 110, secs, kinetic_dir, log_path,
-                                        fade_out=False)
+                                        fade_out=False, **look)
             tw, th = text_box(label, 110)
             layers.append((clip, start, round(70 + tw / 2 - cw / 2),
                            round(frame.h * 0.35 + th / 2 - ch / 2), last))
@@ -540,7 +543,7 @@ def _build_filter(
         # where the drawtext version sits (y is its top edge), for ~1.1 s
         for start, label in tags:
             clip, cw, ch = kinetic_clip(label, 46, 1.1, kinetic_dir, log_path,
-                                        fill=AMBER)
+                                        fill=look["accent"], **look)
             _, th = text_box(label, 46)
             layers.append((clip, start, round((frame.w - cw) / 2),
                            round(frame.h * 0.57 + th / 2 - ch / 2), False))
@@ -552,7 +555,7 @@ def _build_filter(
             vf.append(
                 f"drawtext=fontfile='{FONT_FILE}'"
                 f":text='{drawtext_escape(label)}':expansion=none"
-                f":fontsize=46:fontcolor=0xFFB347:borderw=4:bordercolor=black"
+                f":fontsize=46:fontcolor=0x{"%02X%02X%02X" % look["accent"]}:borderw=4:bordercolor=black"
                 f":x=(w-text_w)/2:y=h*0.57"
                 f":enable='between(t,{start:.3f},{start + 1.1:.3f})'"
                 f":alpha='if(lt(t-{start:.3f},0.1),(t-{start:.3f})/0.1,"

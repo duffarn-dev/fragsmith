@@ -1,6 +1,7 @@
 """Tests for lib/kinetic.py and the kinetic text path in the editing engine.
 
-Covers: the slam curve, the rendered clip (rgba, 60 fps, length, the
+Covers: the slam curve, the looks ([effects].text_color and text_animation:
+pop, glitch and type next to the slam), the rendered clip (rgba, 60 fps, length, the
 overshoot is bigger than the settled text, the fade-out, a held last frame,
 the amber fill of the kill tags), the cache, the filter graph (movie sources
 instead of drawtext for the overlay text, the counter and the kill tags,
@@ -22,7 +23,16 @@ sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from lib.edit_engine import _build_filter  # noqa: E402
-from lib.kinetic import AMBER, WHITE, kinetic_clip, scale_at  # noqa: E402
+from lib.kinetic import (  # noqa: E402
+    AMBER,
+    COLORS,
+    WHITE,
+    kinetic_clip,
+    pop_scale_at,
+    scale_at,
+    text_animation,
+    text_color,
+)
 from lib.models import EditDecision  # noqa: E402
 
 FAILS: list[str] = []
@@ -131,6 +141,78 @@ def test_clip(tmp: Path) -> None:
     check("the fill is part of the cache key", again_amber != amber)
 
 
+def frame_rgba(clip: Path, n: int) -> bytes:
+    return subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(clip), "-vf", f"select='eq(n\\,{n})'",
+         "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"],
+        capture_output=True, check=True).stdout
+
+
+def glow_tint(clip: Path, n: int) -> tuple[int, int, int]:
+    """The average color of frame n's half-transparent pixels: the glow."""
+    raw = frame_rgba(clip, n)
+    px = [raw[i:i + 3] for i in range(0, len(raw), 4) if 40 < raw[i + 3] < 200]
+    return tuple(round(sum(p[c] for p in px) / max(1, len(px))) for c in range(3))
+
+
+def red_fringe(clip: Path, n: int) -> int:
+    """How many pixels of frame n are the glitch's red split: red, no green."""
+    raw = frame_rgba(clip, n)
+    return sum(1 for i in range(0, len(raw), 4)
+               if raw[i + 3] > 120 and raw[i] > 180 and raw[i + 1] < 60 and raw[i + 2] < 60)
+
+
+def test_looks(tmp: Path) -> None:
+    print("the looks")
+    log = tmp / "log.txt"
+    check("text_color: a name", text_color({"text_color": "Cyan"}) == COLORS["cyan"])
+    check("text_color: #rrggbb", text_color({"text_color": "#10ff80"}) == (16, 255, 128))
+    check("text_color: unknown is amber", text_color({"text_color": "plaid"}) == AMBER
+          and text_color({}) == AMBER)
+    check("text_animation: unknown is slam", text_animation({"text_animation": "spin"}) == "slam"
+          and text_animation({}) == "slam" and text_animation({"text_animation": "Pop"}) == "pop")
+    check("pop grows from 0.2x and springs past 1.0x",
+          abs(pop_scale_at(0) - 0.2) < 1e-9 and pop_scale_at(0.18) > 1.1
+          and pop_scale_at(1.0) == 1.0)
+
+    slam, _, _ = kinetic_clip("ACE", 110, 1.0, tmp / "k", log)
+    settled_w = alpha_of(slam, 40)[1]
+    pop, _, _ = kinetic_clip("ACE", 110, 1.0, tmp / "k", log, animation="pop")
+    check("pop: starts small", alpha_of(pop, 1)[1] < settled_w * 0.6,
+          f"{alpha_of(pop, 1)[1]} vs {settled_w}")
+    check("pop: settles at the same size", abs(alpha_of(pop, 40)[1] - settled_w) <= 3)
+    typed, _, _ = kinetic_clip("ACE", 110, 1.0, tmp / "k", log, animation="type")
+    first_w, all_w = alpha_of(typed, 0)[1], alpha_of(typed, 40)[1]
+    check("type: one letter first, all of them later", first_w < all_w * 0.5,
+          f"{first_w} vs {all_w}")
+    glitch, _, _ = kinetic_clip("ACE", 110, 1.0, tmp / "k", log, animation="glitch")
+    burst = max(red_fringe(glitch, n) for n in (2, 5, 8, 11))
+    check("glitch: a red split while it breaks up", burst > 200, f"{burst} px")
+    check("glitch: clean once it's in", red_fringe(glitch, 40) < 20,
+          f"{red_fringe(glitch, 40)} px")
+    again, _, _ = kinetic_clip("ACE", 110, 1.0, tmp / "k", log, animation="glitch")
+    check("glitch: the same jitter every time (cached)", again == glitch)
+    check("each animation is its own clip", len({slam, pop, typed, glitch}) == 4)
+
+    cyan, _, _ = kinetic_clip("ACE", 110, 1.0, tmp / "k", log, accent=COLORS["cyan"])
+    r, _, b = glow_tint(cyan, 8)
+    ra, _, ba = glow_tint(slam, 8)
+    check("the glow takes the accent color", b > r and ra > ba,
+          f"cyan glow {glow_tint(cyan, 8)}, amber glow {glow_tint(slam, 8)}")
+
+    fx = {**PLAIN_FX, "text_color": "magenta", "text_animation": "pop"}
+    tags = [(1.0, "NOSCOPE")]
+    looked, _, _ = _build_filter([(0.0, 4.0, 1.0)], decision("3K"), fx, None,
+                                 tags=tags, kinetic_dir=tmp / "k", log_path=log)
+    default, _, _ = _build_filter([(0.0, 4.0, 1.0)], decision("3K"), PLAIN_FX, None,
+                                  tags=tags, kinetic_dir=tmp / "k", log_path=log)
+    check("the engine draws the text in the configured look",
+          looked.count("movie=") == 2 and looked != default)
+    plain_tags, _, _ = _build_filter([(0.0, 4.0, 1.0)], decision(None), fx, None, tags=tags)
+    check("kill tags without Pillow: the accent color too",
+          "fontcolor=0xFF54D4" in plain_tags)
+
+
 def test_graph(tmp: Path) -> None:
     print("the filter graph")
     log = tmp / "log.txt"
@@ -200,6 +282,8 @@ if __name__ == "__main__":
     test_curve()
     with tempfile.TemporaryDirectory() as t:
         test_clip(Path(t))
+    with tempfile.TemporaryDirectory() as t:
+        test_looks(Path(t))
     with tempfile.TemporaryDirectory() as t:
         test_graph(Path(t))
     with tempfile.TemporaryDirectory() as t:

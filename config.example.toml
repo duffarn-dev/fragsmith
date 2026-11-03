@@ -121,6 +121,8 @@ kill_tags = true         # NOSCOPE / WALLBANG / THROUGH SMOKE / JUMPSHOT / BLIND
 lowerthird = true        # subtle context line in the bottom left: map · round · 1vX
 animated_overlays = true # overlay text slides up + fades instead of a hard on/off
 kinetic_text = false     # overlay text, kill counter and kill tags slam in with a glow (needs Pillow)
+text_color = "amber"     # the glow and the kill tags: amber, red, cyan, magenta, lime, gold, white or "#rrggbb"
+text_animation = "slam"  # how kinetic text comes in: slam, pop, glitch or type
 impact_split = true      # 3 frames of color shift on big kills; follows the punch selection
 instant_replay = true    # the climax kill is rewound and shown in slow-mo from the
                          # victim's POV (needs an extra render pass: more render time/disk)
