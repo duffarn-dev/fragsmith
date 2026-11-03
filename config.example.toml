@@ -95,6 +95,7 @@ vignette = true          # darker corners
 beat_zoom = true         # pulse zoom that thumps on the beats
 beat_zoom_strength = 0.5 # 0.5 = subtle, 2.0 = aggressive (1.4 can feel "laggy")
 flash_transitions = true # white flash into clips (where the Director chose "cut")
+transitions = []         # on clip changes, taking turns: "whip", "zoom", "glitch" ([] = hard cuts)
 wobble = false           # off: beat-synced shaking can feel restless
 kill_zoom = true         # deep zoom into the crosshair on the last kill of each clip
 kill_zoom_factor = 1.7   # how far in (1.7 = 70%)
@@ -115,8 +116,11 @@ headshot_punch = true    # small zoom punch on headshots; the last kill is cover
 headshot_punch_strength = 1.0  # 1.0 ≈ 1.18× zoom (also scaled by intensity, capped at 1.22×)
 headshot_micro_slowmo = true   # short 0.4× moment around the headshot punch
 kill_counter = true      # counter 1→2→3→4K/ACE synced to each kill, clips with 3+ kills
+kill_tags = true         # NOSCOPE / WALLBANG / THROUGH SMOKE / JUMPSHOT / BLIND / long shot
+                         # callout under the crosshair on the kill (from the demo's kill events)
 lowerthird = true        # subtle context line in the bottom left: map · round · 1vX
 animated_overlays = true # overlay text slides up + fades instead of a hard on/off
+kinetic_text = false     # overlay text, kill counter and kill tags slam in with a glow (needs Pillow)
 impact_split = true      # 3 frames of color shift on big kills; follows the punch selection
 instant_replay = true    # the climax kill is rewound and shown in slow-mo from the
                          # victim's POV (needs an extra render pass: more render time/disk)
@@ -138,6 +142,9 @@ thumbnail = true               # thumbnail.jpg (1280x720) of the climax kill nex
 sfx = true                     # whoosh into clip changes + impact on big kills
 sfx_volume = 0.35              # SFX level in the mix (impact gets ×1.3)
 sfx_dir = "assets/sfx"         # your own .wav files here override; if missing, they're synthesized
+riser = false                  # a rising sweep into the music's drop (or into the climax clip without one)
+drop_gap = false               # a split second of silence just before the drop, so it hits harder
+drop_boom = false              # a sub boom on the drop
 
 [branding]
 # Your own look. Paths are relative to the Fragsmith folder unless absolute.

@@ -6,14 +6,16 @@ Output: runs/<id>/final.mp4 + report.md.
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime
 from pathlib import Path
 
 from lib.branding import branding_files, card_background_filter, logo_overlay
-from lib.edit_engine import ENCODE_ARGS, LANDSCAPE, Frame
+from lib.edit_engine import ENCODE_ARGS, LANDSCAPE, Frame, _climax_clip_id
 from lib.ffmpeg_util import (
     FONT_FILE,
     drawtext_escape,
+    mean_volume,
     probe_duration,
     probe_video_start,
     run_ffmpeg,
@@ -21,6 +23,18 @@ from lib.ffmpeg_util import (
 from lib.hype_score import counts_as_kill, teamkill_note, teamkills_by
 from lib.models import EditPlan
 from lib.version import __version__
+
+# Drop cues: the riser is at most 2 bars and never longer than this, and the
+# gap before the drop is 1/8 beat but never shorter than this (shorter is
+# heard as a click, not as silence)
+DROP_RISER_MAX_S = 4.0
+DROP_GAP_MIN_S = 0.1
+# The riser's level follows the music under it: at this sfx_volume (hype's)
+# its last half second is as loud as the music, and sfx_volume moves it
+# from there (0.35: 2.2 dB under, 0.25: 5.1 dB under). A near-silent
+# build-up counts as the floor, so the riser is still heard
+RISER_MATCH_SFX_VOLUME = 0.45
+RISER_MUSIC_FLOOR_DB = -30.0
 
 
 def _card_source(
@@ -72,6 +86,8 @@ def _ensure_sfx(sfx_dir: Path, log_path: Path) -> dict[str, Path]:
     sfx_dir.mkdir(parents=True, exist_ok=True)
     whoosh = sfx_dir / "whoosh.wav"
     impact = sfx_dir / "impact.wav"
+    riser = sfx_dir / "riser.wav"
+    boom = sfx_dir / "boom.wav"
     if not whoosh.exists():
         # pink-noise riser (0.6 s) that builds into the cut
         run_ffmpeg(
@@ -109,7 +125,112 @@ def _ensure_sfx(sfx_dir: Path, log_path: Path) -> dict[str, Path]:
             log_path,
             "step 7: synthesizing impact.wav",
         )
-    return {"whoosh": whoosh, "impact": impact}
+    if not riser.exists():
+        # 4 s build-up into the drop: an exponential sweep (150 Hz -> 3 kHz)
+        # under band-passed noise, swelling to full at the very end, so the
+        # last N seconds of it (a shorter riser) still end on the peak. The
+        # swell is quadratic: an exponential one was inaudible until the last
+        # second (-107 dB at the start, -29 dB at 3 s)
+        run_ffmpeg(
+            [
+                "-f", "lavfi", "-i",
+                "aevalsrc='0.45*sin(2*PI*150*4/log(20)*(pow(20,t/4)-1))'"
+                ":s=48000:d=4",
+                "-f", "lavfi", "-i", "anoisesrc=d=4:c=white:r=48000:a=0.5",
+                "-filter_complex",
+                "[1:a]highpass=f=1200,lowpass=f=9000[noise];"
+                "[0:a][noise]amix=inputs=2:duration=first:normalize=0,"
+                "afade=t=in:d=4:curve=qua,volume=1.3,alimiter=limit=0.95[sfx]",
+                "-map", "[sfx]", "-ac", "2", str(riser),
+            ],
+            log_path,
+            "step 7: synthesizing riser.wav",
+        )
+    if not boom.exists():
+        # sub boom on the drop: a pitch dive (90 -> 38 Hz) with a long tail,
+        # plus its octave, because phone speakers can't play 40 Hz
+        phase = "(38*t+4.68*(1-exp(-t/0.09)))"
+        run_ffmpeg(
+            [
+                "-f", "lavfi", "-i",
+                f"aevalsrc='(sin(2*PI*{phase})+0.35*sin(4*PI*{phase}))"
+                f"*exp(-t/0.55)*0.65':s=48000:d=1.8",
+                "-af", "afade=t=out:st=1.5:d=0.3,alimiter=limit=0.95",
+                "-ac", "2", str(boom),
+            ],
+            log_path,
+            "step 7: synthesizing boom.wav",
+        )
+    return {"whoosh": whoosh, "impact": impact, "riser": riser, "boom": boom}
+
+
+def drop_cue(
+    plan: EditPlan,
+    cut_log: list[dict],
+    drop_info: dict | None,
+    bpm: float | None,
+) -> dict | None:
+    """Where the drop's sound cues are anchored on the film's timeline: the
+    music's drop when drop sync put the climax on it, otherwise the start of
+    the climax clip. None without a climax clip in the cut."""
+    if drop_info:
+        return {"time_s": drop_info["drop_timeline_s"], "on_drop": True, "bpm": bpm}
+    cid = _climax_clip_id(plan)
+    entry = next((c for c in cut_log if c["clip_id"] == cid), None)
+    if entry is None:
+        return None
+    start = entry["timeline_end_s"] - entry["segment_duration_s"]
+    return {"time_s": round(start, 3), "on_drop": False, "bpm": bpm}
+
+
+def drop_cue_times(cue: dict | None, cfg: dict) -> dict:
+    """The riser window, gap window and boom time for a cue, in film seconds:
+    {"at", "riser": (start, end), "gap": (start, end), "boom"}. Only the cues
+    that are on are in it, and it's empty when none are.
+
+    The gap only goes on a real drop: silence in the middle of a phrase is
+    heard as a glitch, not as a build-up. With a gap, the riser ends where
+    the gap starts, so the drop is the first thing after the silence."""
+    editing = cfg.get("editing", {})
+    if not cue or not cfg.get("effects", {}).get("enabled", True):
+        return {}
+    at = float(cue["time_s"])
+    bpm = float(cue.get("bpm") or 0)
+    beat = 60.0 / bpm if bpm > 0 else 0.5
+    out: dict = {}
+    end = at
+    if editing.get("drop_gap", False) and cue.get("on_drop"):
+        gap = min(0.25, max(DROP_GAP_MIN_S, beat / 8))
+        if at - gap > 0:
+            out["gap"] = (round(at - gap, 3), round(at, 3))
+            end = at - gap
+    if editing.get("riser", False):
+        # 2 bars of 4/4, and it starts at least 0.5 s into the film
+        length = min(DROP_RISER_MAX_S, 8 * beat, end - 0.5)
+        if length >= 1.0:
+            out["riser"] = (round(end - length, 3), round(end, 3))
+    if editing.get("drop_boom", False):
+        out["boom"] = round(at, 3)
+    if out:
+        out["at"] = round(at, 3)
+    return out
+
+
+def riser_gain(
+    riser: Path, music: Path, music_start: float, seconds: float, sfx_volume: float
+) -> float:
+    """The riser's volume, so it ends as loud as the music under it
+    (music_start..+seconds in the track, see RISER_MATCH_SFX_VOLUME). Never
+    louder than the old fixed sfx_volume x2.6. That was tuned on music at
+    -11 dB, and the build-up before a drop is often much quieter: at -19 dB
+    the riser ended 10 dB over the music."""
+    if sfx_volume <= 0:
+        return 0.0
+    music_db = max(RISER_MUSIC_FLOOR_DB, mean_volume(music, music_start, seconds))
+    tail = min(0.5, seconds)
+    riser_db = mean_volume(riser, probe_duration(riser) - tail, tail)
+    target = music_db + 20 * math.log10(sfx_volume / RISER_MATCH_SFX_VOLUME)
+    return min(sfx_volume * 2.6, 10 ** ((target - riser_db) / 20))
 
 
 def player_stats(
@@ -299,13 +420,15 @@ def assemble(
     frame: Frame = LANDSCAPE,
     final_name: str = "final.mp4",
     work_dir: Path | None = None,
+    drop_cue: dict | None = None,
 ) -> Path:
     """hook_files: prebuilt cold open glimpses (from build_intro_hook);
     None = build them here (backward compatible). intro_seconds overrides
     the config (intro adjustment for drop sync). music_offset: start the
     music this many seconds INTO the track, with a short fade-in.
     frame/final_name/work_dir: the 9:16 film is a second pass with its own
-    cards and timeline next to the landscape one."""
+    cards and timeline next to the landscape one. drop_cue: where the riser,
+    gap and boom go (from drop_cue()); None = no drop cues."""
     editing = cfg.get("editing", {})
     intro_s = (
         float(editing.get("intro_seconds", 2.5))
@@ -361,13 +484,14 @@ def assemble(
     sfx_inputs: list[str] = []
     sfx_chains: list[str] = []
     sfx_labels: list[str] = []
+    cues = drop_cue_times(drop_cue, cfg)
+    sfx_dir = Path(editing.get("sfx_dir", "assets/sfx"))
+    if not sfx_dir.is_absolute():
+        # a relative path is anchored in the project folder, not the CWD
+        sfx_dir = Path(__file__).resolve().parent.parent / sfx_dir
+    vol = float(editing.get("sfx_volume", 0.35))
+    sfx = _ensure_sfx(sfx_dir, log_path) if editing.get("sfx", False) or cues else {}
     if editing.get("sfx", False):
-        sfx_dir = Path(editing.get("sfx_dir", "assets/sfx"))
-        if not sfx_dir.is_absolute():
-            # a relative path is anchored in the project folder, not the CWD
-            sfx_dir = Path(__file__).resolve().parent.parent / sfx_dir
-        sfx = _ensure_sfx(sfx_dir, log_path)
-        vol = float(editing.get("sfx_volume", 0.35))
         seg_starts: list[float] = []
         pos = 0.0
         seg_set = {p.resolve() for p in segment_files}
@@ -375,7 +499,10 @@ def assemble(
             if p.resolve() in seg_set:
                 seg_starts.append(pos)
             pos += d
-        whoosh_times = [max(0.0, s - 0.30) for s in seg_starts]
+        # the whoosh leads into the cut: the beat, the middle of a transition
+        cuts = [e.get("cut_at_s", 0.0) for e in cut_log or []]
+        cuts += [0.0] * (len(seg_starts) - len(cuts))
+        whoosh_times = [max(0.0, s + c - 0.30) for s, c in zip(seg_starts, cuts)]
         impact_events = [
             s + t
             for s, entry in zip(seg_starts, cut_log or [])
@@ -398,6 +525,34 @@ def assemble(
                     f"[{name}{i}]adelay=delays={int(t * 1000)}:all=1[{name}d{i}]"
                 )
                 sfx_labels.append(f"[{name}d{i}]")
+
+    # Drop cues. The riser is the last part of riser.wav, so it ends on its
+    # peak exactly where the gap (or the drop) starts, as loud as the music
+    # under it there (riser_gain)
+    if "riser" in cues:
+        start, end = cues["riser"]
+        file_s = probe_duration(sfx["riser"])
+        length = min(end - start, file_s)
+        gain = riser_gain(
+            sfx["riser"], music_path, max(0.0, float(music_offset)) + end - length,
+            length, vol,
+        )
+        idx = 2 + len(sfx_inputs)
+        sfx_inputs.append(str(sfx["riser"]))
+        sfx_chains.append(
+            f"[{idx}:a]atrim=start={file_s - length:.3f},asetpts=PTS-STARTPTS,"
+            f"afade=t=in:d={length * 0.3:.3f},volume={gain:.3f},"
+            f"adelay=delays={int((end - length) * 1000)}:all=1[riser]"
+        )
+        sfx_labels.append("[riser]")
+    if "boom" in cues:
+        idx = 2 + len(sfx_inputs)
+        sfx_inputs.append(str(sfx["boom"]))
+        sfx_chains.append(
+            f"[{idx}:a]volume={vol * 2.2:.2f},"
+            f"adelay=delays={int(cues['boom'] * 1000)}:all=1[boom]"
+        )
+        sfx_labels.append("[boom]")
 
     # Game audio: each part's own audio, cut or padded to the part's length.
     # Not the timeline's audio: the stream copy keeps every part's AAC
@@ -451,12 +606,29 @@ def assemble(
         )
     if sfx_chains:
         mix = ";".join(sfx_chains) + ";" + mix
+    out_audio = "[amix]"
+    if "gap" in cues:
+        # The whole mix drops out before the drop: 10 ms down, 4 ms back up
+        # ending on the drop, so there are no clicks and the drop hits on
+        # its first sample. The boom starts on the drop, after the gap.
+        # Time is n/s (the sample count, as adelay counts it), not t: t
+        # follows the frame timestamps, which can be off the sample count
+        # (on the old stream-copied timeline audio the gap landed 50 ms late)
+        g0, g1 = cues["gap"]
+        gain = f"clip(({g0:.3f}-n/s)/0.01,0,1)+clip((n/s-{g1:.3f})/0.004+1,0,1)"
+        mix += f";{out_audio}aeval='val(ch)*({gain})':c=same[agap]"
+        out_audio = "[agap]"
+    if cues:
+        # The boom lands on the music's loudest moment, and the sum clipped
+        # without a ceiling. level=false: no auto gain; latency=true: no delay,
+        # or the drop would land late
+        mix += f";{out_audio}alimiter=limit=0.95:level=false:latency=true[alim]"
+        out_audio = "[alim]"
     # The concat step starts the picture ~21 ms in (the first part's AAC
     # priming), so the audio starts there too instead of ahead of it
     v_start = probe_video_start(timeline)
-    out_audio = "[amix]"
     if v_start > 0:
-        mix += f";[amix]asetpts=PTS+{v_start:.6f}/TB[async]"
+        mix += f";{out_audio}asetpts=PTS+{v_start:.6f}/TB[async]"
         out_audio = "[async]"
     run_ffmpeg(
         [
@@ -516,6 +688,16 @@ def write_report(
             f"the drop at {ds['drop_track_s']:.1f} s into the track via {method} — "
             f"offset {err:+d} ms"
         )
+    dc = beats.get("drop_cues")
+    if dc:
+        parts = []
+        if "riser" in dc:
+            parts.append(f"riser {dc['riser'][1] - dc['riser'][0]:.1f} s")
+        if "gap" in dc:
+            parts.append(f"gap {dc['gap'][1] - dc['gap'][0]:.2f} s")
+        if "boom" in dc:
+            parts.append("boom")
+        lines.append(f"**Drop sound:** {', '.join(parts)} at {dc['at']:.1f} s in the film")
     # the same numbers the stats outro shows, so they can be checked here
     any_cand = next(iter(candidates_by_id.values()), None)
     stats = player_stats(

@@ -21,6 +21,9 @@ from lib.ffmpeg_util import (
     probe_fps,
     run_ffmpeg,
 )
+from lib.hype_score import LONG_SHOT_M
+from lib.kinetic import available as kinetic_available
+from lib.kinetic import AMBER, kinetic_clip, movie_source, text_box
 from lib.models import EditDecision, EditPlan
 
 ENCODE_ARGS = [
@@ -55,9 +58,11 @@ class Frame(NamedTuple):
     def normalize(self) -> str:
         """Filters that bring any source into this frame (fps not included)."""
         if self.cover:
+            # setsar=1: the cover scale leaves a 10240:10239 pixel aspect, and
+            # filters that join two streams (concat, xfade) need them equal
             return (
                 f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,"
-                f"crop={self.w}:{self.h}"
+                f"crop={self.w}:{self.h},setsar=1"
             )
         return (
             f"scale={self.w}:{self.h}:force_original_aspect_ratio=decrease,"
@@ -367,11 +372,16 @@ def _build_filter(
     impacts: list[float] | None = None,
     src_fps: float = 60.0,
     frame: Frame = LANDSCAPE,
+    tags: list[tuple[float, str]] | None = None,
+    kinetic_dir: Path | None = None,
+    log_path: Path | None = None,
     blur_shutter: float | None = None,
 ) -> tuple[str, str, str]:
     """filter_complex: trim/setpts/atempo per part + concat + effects +
     overlay + entry transition. src_fps: the source frame rate; high-fps
     sources are slowed down with real frames, without minterpolate.
+    kinetic_dir: draw the overlay text and the counter as kinetic text
+    (clips cached there) instead of drawtext; None = drawtext.
     blur_shutter: motion blur with this shutter angle (degrees), made from
     the source's real frames; None = none."""
     punch = effects.get("enabled", True) and effects.get("slowmo_punch", True)
@@ -468,7 +478,16 @@ def _build_filter(
         shift = max(2, round(5 * k))
         cond = "+".join(f"between(t,{t:.3f},{t + 0.05:.3f})" for t in impacts)
         vf.append(f"chromashift=cbh=-{shift}:crh={shift}:enable='{cond}'")
-    if decision.overlay_text:
+    # kinetic text clips laid over the picture after the effects:
+    # (clip, start, x, y, hold the last frame)
+    layers: list[tuple[Path, float, int, int, bool]] = []
+    if decision.overlay_text and kinetic_dir is not None:
+        # same place and window as the drawtext version (y is its top edge)
+        clip, cw, ch = kinetic_clip(decision.overlay_text, 88, 2.8, kinetic_dir, log_path)
+        _, th = text_box(decision.overlay_text, 88)
+        layers.append((clip, 0.4, round((frame.w - cw) / 2),
+                       round(frame.h * 0.72 + th / 2 - ch / 2), False))
+    elif decision.overlay_text:
         text = drawtext_escape(decision.overlay_text)
         if effects.get("enabled", True) and effects.get("animated_overlays", False):
             # the text slides up and fades in (0.4-0.65 s), fades out toward
@@ -491,7 +510,18 @@ def _build_filter(
                 f":x=(w-text_w)/2:y=h*0.72"
                 f":enable='between(t,0.4,3.2)'"
             )
-    if counter:
+    if counter and kinetic_dir is not None:
+        # Each tick slams in and is cut by the next one; the last holds its
+        # settled frame to the end of the segment (and through a freeze)
+        for i, (start, label) in enumerate(counter):
+            last = i + 1 == len(counter)
+            secs = 1.0 if last else max(1 / 60, counter[i + 1][0] - start)
+            clip, cw, ch = kinetic_clip(label, 110, secs, kinetic_dir, log_path,
+                                        fade_out=False)
+            tw, th = text_box(label, 110)
+            layers.append((clip, start, round(70 + tw / 2 - cw / 2),
+                           round(frame.h * 0.35 + th / 2 - ch / 2), last))
+    elif counter:
         # Kill counter that ticks up on every kill (output time) with an
         # alpha pop per tick. Left side: doesn't collide with the killfeed
         # (top right), overlay_text (center) or the lower third (bottom left).
@@ -504,6 +534,29 @@ def _build_filter(
                 f":x=70:y=h*0.35"
                 f":enable='between(t,{start:.3f},{end:.3f})'"
                 f":alpha='min(1,(t-{start:.3f})/0.15)'"
+            )
+    if tags and kinetic_dir is not None:
+        # Each tag slams in like the overlay text, in its own amber and size,
+        # where the drawtext version sits (y is its top edge), for ~1.1 s
+        for start, label in tags:
+            clip, cw, ch = kinetic_clip(label, 46, 1.1, kinetic_dir, log_path,
+                                        fill=AMBER)
+            _, th = text_box(label, 46)
+            layers.append((clip, start, round((frame.w - cw) / 2),
+                           round(frame.h * 0.57 + th / 2 - ch / 2), False))
+    elif tags:
+        # Kill tags (NOSCOPE, WALLBANG, ...) pop in just under the crosshair
+        # on their kill and fade after ~1 s: amber, so they read as a callout,
+        # not as the overlay text (center, 72%) or the counter (left)
+        for start, label in tags:
+            vf.append(
+                f"drawtext=fontfile='{FONT_FILE}'"
+                f":text='{drawtext_escape(label)}':expansion=none"
+                f":fontsize=46:fontcolor=0xFFB347:borderw=4:bordercolor=black"
+                f":x=(w-text_w)/2:y=h*0.57"
+                f":enable='between(t,{start:.3f},{start + 1.1:.3f})'"
+                f":alpha='if(lt(t-{start:.3f},0.1),(t-{start:.3f})/0.1,"
+                f"if(lt(t-{start:.3f},0.85),1,max(0,(1.1-(t-{start:.3f}))/0.25)))'"
             )
     if lowerthird:
         # Subtle context line (map · round · 1vX) in the bottom left, short
@@ -537,12 +590,147 @@ def _build_filter(
         # Note: overlay_text sits at y=h*0.72 (~777 in 1080p) and clears the
         # bar (920).
         slide = "min(160,160*t/0.4)"
-        chains.append(f"[vc]{','.join(vf)}[vfx]")
+    after_fx = "[vfx]" if letterbox else "[vout]"
+    if layers:
+        # Kinetic text goes on after the effects (it shouldn't zoom, tilt or
+        # split along) and under the letterbox bar, like the drawtext did.
+        # setpts places each clip at its start; eof_action=pass removes it
+        # when it ends, repeat holds its last frame.
+        chains.append(f"[vc]{','.join(vf)}[vk0]")
+        for i, (clip, start, x, y, hold) in enumerate(layers):
+            last = i + 1 == len(layers)
+            out = f"{after_fx[:-1]}t]" if last else f"[vk{i + 1}]"
+            chains.append(f"{movie_source(clip)},setpts=PTS+{start:.3f}/TB[kt{i}]")
+            chains.append(
+                f"[vk{i}][kt{i}]overlay=x={x}:y={y}"
+                f":eof_action={'repeat' if hold else 'pass'}{out}"
+            )
+        # the overlay can hand on an RGB format (the logo's gbrp trap)
+        chains.append(f"{after_fx[:-1]}t]format=yuv420p{after_fx}")
+    else:
+        chains.append(f"[vc]{','.join(vf)}{after_fx}")
+    if letterbox:
         chains.append(f"color=black:s={frame.w}x160:r=60[lbb]")
         chains.append(f"[vfx][lbb]overlay=x=0:y='{frame.h}-{slide}'[vout]")
-    else:
-        chains.append(f"[vc]{','.join(vf)}[vout]")
     return ";".join(chains), "[vout]", "[ac]"
+
+
+# Transitions on clip changes: kind → length in frames at 60 fps. Even, so
+# the cut point (the beat) is the transition's middle frame boundary.
+TRANSITIONS = {"whip": 16, "zoom": 20, "glitch": 12}
+# The outgoing clip's tail is handed to the next segment as a lossless file,
+# so it's only compressed once, in the final segment
+TAIL_ARGS = [
+    "-c:v", "libx264", "-preset", "ultrafast", "-qp", "0",
+    "-pix_fmt", "yuv420p", "-r", "60",
+    "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2",
+]
+
+
+def pick_transitions(decisions: list[EditDecision], fx: dict, replay_id: str | None) -> dict:
+    """{clip_id: kind} for every clip that comes in with a transition from
+    the clip before it. Only between two clips: not out of the intro, not
+    into or out of a replay, not into a "fade". The Director's explicit kind
+    wins when the style allows it; otherwise the style's list takes turns."""
+    kinds = [k for k in (fx.get("transitions") or []) if k in TRANSITIONS]
+    if not fx.get("enabled", True) or not kinds:
+        return {}
+    out: dict = {}
+    for i, (prev, d) in enumerate(zip(decisions, decisions[1:])):
+        if prev.clip_id == replay_id or d.transition_in == "fade":
+            continue
+        out[d.clip_id] = d.transition_in if d.transition_in in kinds else kinds[i % len(kinds)]
+    return out
+
+
+def _xfade(kind: str, d: float) -> str:
+    """The transition between [a] and [b], both starting at 0. whip: a slide
+    smeared sideways at its fastest; zoom: a push into the next clip;
+    glitch: a mosaic with a color split."""
+    mid = f"enable='between(t,{d * 0.2:.4f},{d * 0.8:.4f})'"
+    if kind == "whip":
+        return (f"xfade=transition=slideleft:duration={d:.4f}:offset=0,"
+                f"avgblur=sizeX=60:sizeY=1:{mid}")
+    if kind == "zoom":
+        return f"xfade=transition=zoomin:duration={d:.4f}:offset=0"
+    return (f"xfade=transition=pixelize:duration={d:.4f}:offset=0,"
+            f"chromashift=cbh=-12:crh=12:{mid}")
+
+
+SAMPLES_PER_FRAME = 800  # 48 kHz / 60 fps: audio cut on the same frame grid
+
+
+def _with_transitions(
+    graph: str, vout: str, aout: str, length_f: int,
+    kind_in: str | None, kind_out: str | None,
+) -> tuple[str, str, str, str | None, str | None, int]:
+    """Add the clip's transitions to its filter graph. length_f is the clip's
+    beat-snapped length in frames. In: input 1 is the previous clip's tail;
+    it's blended over this clip's first d/2, with the first frame held for
+    the d/2 before it (raw clips have no frames before their window). Out:
+    the frames around the clip's end (the last frame held if the clip runs
+    out) go to a second output for the next segment.
+
+    Everything is cut in whole frames (seconds with 3 decimals round a
+    frame either way, and the next beat snap then lands a beat early).
+    The clip's frame 0 stays at the beat, and the segment's start and end
+    move by d/2: the timeline is the same as with hard cuts.
+    Returns (graph, main video, main audio, tail video, tail audio,
+    frames in the main output)."""
+    half_in = TRANSITIONS[kind_in] // 2 if kind_in else 0
+    half_out = TRANSITIONS[kind_out] // 2 if kind_out else 0
+    main_f = half_in + length_f - half_out
+    spf = SAMPLES_PER_FRAME
+    norm_a = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
+    chains = [graph]
+    v, a = vout, aout
+    vt = at = None
+    if kind_out:
+        chains.append(f"{v}split=2[vm0][vt0]")
+        chains.append(f"{a}{norm_a},asplit=2[am0][at0]")
+        start, end = length_f - half_out, length_f + half_out
+        chains.append(
+            f"[vt0]tpad=stop_mode=clone:stop={2 * half_out},"
+            f"trim=start_frame={start}:end_frame={end},setpts=PTS-STARTPTS[vtail]"
+        )
+        chains.append(
+            f"[at0]apad=pad_len={2 * half_out * spf},"
+            f"atrim=start_sample={start * spf}:end_sample={end * spf},"
+            f"asetpts=PTS-STARTPTS[atail]"
+        )
+        v, a, vt, at = "[vm0]", "[am0]", "[vtail]", "[atail]"
+    if kind_in:
+        d_in = 2 * half_in / 60
+        # padded past main_f: a source that ends early still fills the
+        # segment, and xfade drops the last frame of [b] at its end
+        chains.append(
+            f"{v}tpad=start_mode=clone:start={half_in}:stop_mode=clone:stop=-1,"
+            f"trim=end_frame={main_f + 2},setpts=PTS-STARTPTS,fps=60,format=yuv420p,setsar=1[vb]"
+        )
+        # the tail gets a little extra: xfade drops what's left of [a] after
+        # the transition, but stops early if [a] runs out
+        chains.append(
+            "[1:v]setpts=PTS-STARTPTS,fps=60,format=yuv420p,setsar=1,"
+            "tpad=stop_mode=clone:stop=6[va]"
+        )
+        chains.append(f"[va][vb]{_xfade(kind_in, d_in)}[vmain]")
+        chains.append(
+            f"{a}{norm_a},adelay=delays={half_in * spf}S:all=1,apad,"
+            f"atrim=end_sample={main_f * spf},asetpts=PTS-STARTPTS[ab]"
+        )
+        chains.append(
+            f"[1:a]asetpts=PTS-STARTPTS,{norm_a},apad=pad_len={spf * 6},"
+            f"atrim=end_sample={2 * half_in * spf}[aa]"
+        )
+        chains.append(f"[aa][ab]acrossfade=ns={2 * half_in * spf}:c1=tri:c2=tri[amain]")
+        v, a = "[vmain]", "[amain]"
+    elif kind_out:
+        chains.append(f"{v}trim=end_frame={main_f},setpts=PTS-STARTPTS[vmain]")
+        chains.append(
+            f"{a}atrim=end_sample={main_f * spf},asetpts=PTS-STARTPTS[amain]"
+        )
+        v, a = "[vmain]", "[amain]"
+    return ";".join(chains), v, a, vt, at, main_f
 
 
 # Instant replay: rewind length, slow-mo window around the kill, and factor
@@ -662,6 +850,23 @@ def _build_replay_segment(
         label,
     )
     return probe_duration(out_path)
+
+
+def kill_tag(km) -> str | None:
+    """The callout for a kill: up to two details, most special first
+    ("NOSCOPE · THROUGH SMOKE"), a long shot as "42 M"."""
+    labels = [
+        text for flag, text in (
+            ("noscope", "NOSCOPE"), ("wallbang", "WALLBANG"),
+            ("through_smoke", "THROUGH SMOKE"), ("jumpshot", "JUMPSHOT"),
+            ("blind", "BLIND"),
+        )
+        if getattr(km, flag, False)
+    ]
+    distance = float(getattr(km, "distance_m", 0.0) or 0.0)
+    if distance >= LONG_SHOT_M:
+        labels.append(f"{distance:.0f} M")
+    return "  ·  ".join(labels[:2]) or None
 
 
 def _choose(name: str, default: bool, d_on: set, d_off: set) -> bool:
@@ -892,6 +1097,15 @@ def _simulate_timeline(
     tolerance = float(editing.get("beat_tolerance_seconds", 0.75))
     target_id = _climax_clip_id(plan)
     replay_pick = pick_replay_clip(plan, candidates_by_id, cfg)
+    # the clips build_segments cuts in whole frames: those with a transition
+    rendered = [
+        d for d in sorted(plan.decisions, key=lambda d: d.order)
+        if (clips_dir / f"{d.clip_id}.mp4").exists()
+    ]
+    trans_in = pick_transitions(rendered, fx, replay_pick[0] if replay_pick else None)
+    framed = set(trans_in) | {
+        prev.clip_id for prev, d in zip(rendered, rendered[1:]) if d.clip_id in trans_in
+    }
 
     climax_start: float | None = None
     pos = timeline_start
@@ -908,11 +1122,16 @@ def _simulate_timeline(
         tp = _timing_plan(d, cand, duration, fx)
         desired_end = pos + tp["out_duration"]
         snapped = nearest_beat_before(desired_end, beats, tolerance)
-        pos = (
+        end = (
             snapped
             if snapped is not None and snapped - pos >= 2.0
             else desired_end
         )
+        # A clip with a transition is cut to the nearest whole frame, and the
+        # next snap starts from there. Round the same way: a cut planned a
+        # hair past its beat lands a hair before it in the build, and snaps
+        # a beat early (seen: planned on the drop, built 602 ms before it)
+        pos = pos + round((end - pos) * 60) / 60 if d.clip_id in framed else end
         # the replay segment right after its clip pushes the timeline too
         if replay_pick and replay_pick[0] == d.clip_id:
             src = clips_dir / f"{d.clip_id}_alt.mp4"
@@ -955,6 +1174,52 @@ def outro_seconds(cfg: dict) -> float:
 DROP_INTRO_MIN_S = 1.5
 DROP_INTRO_EXTRA_MAX_S = 4.0
 DROP_CONVERGED_S = 0.02
+DROP_SOLVE_STEPS = 12
+# A drop is hit when the climax starts this close to it. Not the beat
+# tolerance: a whole beat (0.6 s at 100 BPM) is inside that, and a climax
+# a beat late puts the gap and the boom on the clip before it
+DROP_MAX_ERROR_S = 0.1
+
+
+def _solve_drop(
+    err_at, x: float, lo: float | None = None, hi: float | None = None
+) -> float | None:
+    """The lever value x (intro length or music offset) that puts the
+    climax start on the drop. err_at(x) is the drop's timeline position
+    minus the climax start (None if the climax can't be placed); it only
+    falls as x grows. The cuts snap to the beat grid, so the error moves a
+    whole beat at a time: a plain step of x += error can jump past the drop
+    beat and back. Once the error has had both signs, bisect between them,
+    which finds the drop beat if any x reaches it. It may not: the cut into
+    the climax snaps from where the clip before it snapped, so it can skip
+    a beat (seen at 99 BPM: from 604 ms early straight to 581 ms late).
+    Returns the x with the smallest error seen, None if none could be."""
+    best: tuple[float, float] | None = None  # (x, error)
+    below = above = None  # largest x with the error > 0, smallest with < 0
+    for _ in range(DROP_SOLVE_STEPS):
+        err = err_at(x)
+        if err is None:
+            break
+        if best is None or abs(err) < abs(best[1]):
+            best = (x, err)
+        if abs(err) <= DROP_CONVERGED_S:
+            break
+        if err > 0:
+            below = x if below is None else max(below, x)
+        else:
+            above = x if above is None else min(above, x)
+        if below is not None and above is not None:
+            nxt = (below + above) / 2
+        else:
+            nxt = x + err
+        if lo is not None:
+            nxt = max(lo, nxt)
+        if hi is not None:
+            nxt = min(hi, nxt)
+        if abs(nxt - x) < 0.005:
+            break
+        x = nxt
+    return None if best is None else best[0]
 
 
 def plan_drop_sync(
@@ -1016,36 +1281,25 @@ def plan_drop_sync(
         drop_t = float(drop["time_s"])
         r = drop_t - c0
 
+        def intro_err(intro: float) -> float | None:
+            c = climax_start(beats, intro)
+            return None if c is None else drop_t - c
+
+        def offset_err(off: float) -> float | None:
+            c = climax_start(shift_beats(beats, off), base_intro)
+            return None if c is None else (drop_t - off) - c
+
         # Lever 1: intro adjustment, the drop is close to the natural climax
         if lo - base_intro - tolerance <= r <= hi - base_intro + tolerance:
-            intro = min(hi, max(lo, base_intro + r))
-            for _ in range(6):
-                c = climax_start(beats, intro)
-                if c is None:
-                    break
-                err = drop_t - c
-                if abs(err) <= DROP_CONVERGED_S:
-                    break
-                new_intro = min(hi, max(lo, intro + err))
-                if abs(new_intro - intro) < 0.005:
-                    break
-                intro = new_intro
-            c = climax_start(beats, intro)
-            if c is not None and abs(c - drop_t) <= tolerance:
+            intro = _solve_drop(intro_err, min(hi, max(lo, base_intro + r)), lo, hi)
+            c = None if intro is None else climax_start(beats, intro)
+            if c is not None and abs(c - drop_t) <= DROP_MAX_ERROR_S:
                 return result(beats, intro, 0.0, "intro", drop_t, c - drop_t)
 
         # Lever 2: music offset, the drop is far INTO the track
         if r > 0:
-            off = r
-            for _ in range(6):
-                c = climax_start(shift_beats(beats, off), base_intro)
-                if c is None or off <= 0:
-                    break
-                err = (drop_t - off) - c
-                if abs(err) <= DROP_CONVERGED_S:
-                    break
-                off += err
-            if off > 0:
+            off = _solve_drop(offset_err, r, lo=0.0)
+            if off is not None and off > 0:
                 shifted = shift_beats(beats, off)
                 c = climax_start(shifted, base_intro)
                 # the rest of the track must cover the whole film, or the
@@ -1058,7 +1312,7 @@ def plan_drop_sync(
                 music_left = float(beats.get("duration_seconds", 0.0)) - off
                 if (
                     c is not None
-                    and abs(c - (drop_t - off)) <= tolerance
+                    and abs(c - (drop_t - off)) <= DROP_MAX_ERROR_S
                     and music_left >= film_end
                 ):
                     return result(
@@ -1100,6 +1354,17 @@ def build_segments(
     cut_log: list[dict] = []
     flags: list[str] = []
     climax_order = max((d.order for d in plan.decisions), default=0)
+
+    # Kinetic text needs Pillow; without it the text is drawn as before
+    kinetic_dir = None
+    if fx.get("enabled", True) and fx.get("kinetic_text", False):
+        if kinetic_available():
+            kinetic_dir = segments_dir / "kinetic"
+        else:
+            flags.append(
+                "kinetic_text is on, but Pillow isn't installed, so the text "
+                "was drawn plainly. Install it with: pip install -r requirements.txt"
+            )
     # if the Director explicitly picked a climax, it wins over the
     # "last clip" rule
     climax_ids = {d.clip_id for d in plan.decisions if d.is_climax}
@@ -1119,6 +1384,18 @@ def build_segments(
 
     # instant replay: the same pick the render side made
     replay_pick = pick_replay_clip(plan, candidates_by_id, cfg)
+
+    # transitions between clips that were rendered (a missing one is skipped)
+    rendered = [
+        d for d in sorted(plan.decisions, key=lambda d: d.order)
+        if (clips_dir / f"{d.clip_id}.mp4").exists()
+    ]
+    trans_in = pick_transitions(rendered, fx, replay_pick[0] if replay_pick else None)
+    trans_out = {
+        prev.clip_id: trans_in[d.clip_id]
+        for prev, d in zip(rendered, rendered[1:]) if d.clip_id in trans_in
+    }
+    prev_tail: Path | None = None
 
     for decision in sorted(plan.decisions, key=lambda d: d.order):
         clip_path = clips_dir / f"{decision.clip_id}.mp4"
@@ -1243,6 +1520,17 @@ def build_segments(
                 counter.append((t_out, label))
             counter = counter or None
 
+        # Kill tags: the style details of each kill, in output time
+        tags = None
+        if fx_on and fx.get("kill_tags", False) and kills:
+            tags = []
+            for km in kills:
+                label = kill_tag(km)
+                t_out = _out_time(km.offset_s)
+                if label and 0.2 < t_out < target_duration - 0.4:
+                    tags.append((t_out, label))
+            tags = tags or None
+
         # context line from Highlight fields (never from the Director);
         # missing fields are skipped, never an empty "None"
         lowerthird = None
@@ -1277,27 +1565,55 @@ def build_segments(
             float(cfg.get("render", {}).get("motion_blur_shutter", 180))
             if wants_motion_blur(decision, plan, cfg) else None
         )
+        # A transition in replaces the white flash
+        kind_in = trans_in.get(decision.clip_id) if prev_tail else None
+        kind_out = trans_out.get(decision.clip_id)
+        d_in = TRANSITIONS[kind_in] / 60 if kind_in else 0.0
+        d_out = TRANSITIONS[kind_out] / 60 if kind_out else 0.0
         filter_complex, vout, aout = _build_filter(
-            parts, decision, fx, beat_ctx, letterbox, kill_fx,
+            parts, decision, {**fx, "flash_transitions": False} if kind_in else fx,
+            beat_ctx, letterbox, kill_fx,
             freeze, hs_punches, [(s, e) for s, e, _ in micro],
             counter, lowerthird, impacts,
             src_fps=src_fps,  # high-fps source → real slow-mo
-            frame=frame, blur_shutter=blur_shutter,
+            frame=frame, tags=tags, kinetic_dir=kinetic_dir, log_path=log_path,
+            blur_shutter=blur_shutter,
         )
         out_path = segments_dir / f"{decision.order:02d}_{decision.clip_id}.mp4"
+        tail_path = segments_dir / f"{decision.order:02d}_{decision.clip_id}_tail.mkv"
+        inputs = ["-i", str(clip_path)]
+        tail_out: list[str] = []
+        length_args = ["-t", f"{target_duration:.3f}"]
+        if kind_in or kind_out:
+            filter_complex, vout, aout, vtail, atail, main_f = _with_transitions(
+                filter_complex, vout, aout, round(target_duration * 60),
+                kind_in, kind_out,
+            )
+            length_args = ["-frames:v", str(main_f)]
+            if kind_in:
+                inputs += ["-i", str(prev_tail)]
+            if kind_out:
+                tail_out = ["-map", vtail, "-map", atail, *TAIL_ARGS, str(tail_path)]
         run_ffmpeg(
             [
-                "-i", str(clip_path),
+                *inputs,
                 "-filter_complex", filter_complex,
                 "-map", vout, "-map", aout,
-                "-t", f"{target_duration:.3f}",
+                *length_args,
                 *ENCODE_ARGS,
                 str(out_path),
+                *tail_out,
             ],
             log_path,
-            f"step 6: segment {decision.order:02d} ({decision.clip_id})",
+            f"step 6: segment {decision.order:02d} ({decision.clip_id})"
+            + (f", {kind_in} in" if kind_in else ""),
         )
-        actual = probe_duration(out_path)
+        prev_tail = tail_path if kind_out else None
+        seg_file_s = probe_duration(out_path)
+        # the clip's length on the timeline, beat to beat: the file starts
+        # d_in/2 early and stops d_out/2 before the next beat. Rounded, so
+        # float noise can't put the next cut a hair before its beat.
+        actual = round(seg_file_s - d_in / 2 + d_out / 2, 4)
         # Actual sync error: how far the cut lands from the beat after
         # encoding (frame granularity ~17 ms at 60 fps). The target is ±100 ms.
         beat_offset_ms = (
@@ -1315,8 +1631,11 @@ def build_segments(
                 "beat_offset_ms": beat_offset_ms,
                 "timeline_end_s": round(timeline_pos + actual, 3),
                 # impact SFX is mixed at these times (relative to the
-                # segment start) during assembly
-                "sfx_impact_times_s": [round(t, 3) for t in impact_times],
+                # segment file's start) during assembly
+                "sfx_impact_times_s": [round(t + d_in / 2, 3) for t in impact_times],
+                # where in the file the clip starts (the beat), for the whoosh
+                "cut_at_s": round(d_in / 2, 3),
+                "transition_in": kind_in,
                 # frames blended per output frame at normal speed (1 = none)
                 "motion_blur_frames": (
                     blur_frames(src_fps, blur_shutter, 1.0) if blur_shutter else 1
@@ -1340,10 +1659,11 @@ def build_segments(
             replay_out = segments_dir / (
                 f"{decision.order:02d}b_{decision.clip_id}_replay.mp4"
             )
+            # (a replay clip never has a transition out, but may have one in)
             replay_dur = _build_replay_segment(
                 out_path, replay_src,
-                replay_kill.offset_s, _out_time(replay_kill.offset_s),
-                actual, fx, replay_out, log_path,
+                replay_kill.offset_s, _out_time(replay_kill.offset_s) + d_in / 2,
+                seg_file_s, fx, replay_out, log_path,
                 f"step 6: replay ({decision.clip_id})",
                 frame=frame,
             )

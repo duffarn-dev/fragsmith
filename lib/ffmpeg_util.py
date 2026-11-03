@@ -6,6 +6,7 @@ full stderr (never silently swallowed).
 """
 from __future__ import annotations
 
+import re
 import subprocess
 import time
 from datetime import datetime
@@ -91,6 +92,22 @@ def probe_video_start(path: Path) -> float:
         return max(0.0, float(proc.stdout.strip()))
     except ValueError:  # "N/A"
         return 0.0
+
+
+def mean_volume(path: Path, start: float = 0.0, seconds: float | None = None) -> float:
+    """The RMS level of a stretch of a file's audio in dBFS (volumedetect's
+    mean_volume), -91 for silence."""
+    cmd = ["ffmpeg", "-hide_banner", "-nostats", "-ss", f"{max(0.0, start):.3f}"]
+    if seconds is not None:
+        cmd += ["-t", f"{seconds:.3f}"]
+    cmd += ["-i", str(path), "-map", "0:a:0", "-af", "volumedetect", "-f", "null", "-"]
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+    )
+    if proc.returncode != 0:
+        raise FfmpegError(f"volumedetect failed on {path}: {proc.stderr.strip()[-500:]}")
+    found = re.search(r"mean_volume: (-?[\d.]+) dB", proc.stderr)
+    return float(found.group(1)) if found else -91.0
 
 
 def drawtext_escape(text: str) -> str:
