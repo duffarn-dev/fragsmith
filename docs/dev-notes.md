@@ -67,6 +67,7 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
 
 ## Timeline
 
+- **Drop sync can't reach every drop beat.** The cut into the climax snaps to a beat from where the clip before it snapped, so moving the music offset can skip a beat: on a 99 BPM track the climax went from 604 ms early straight to 581 ms late. The old check took anything inside the beat tolerance (0.75 s), so the film had the gap and the boom on the drop and the cut a beat later. A hit is now within 100 ms; otherwise drop sync tries the next drop.
 - Effects that add content at the **front** of the timeline (the cold open) must be counted into the beat-sync start position. Forgetting this put all beat sync ~0.75 s off with `intro_hook` on.
 
 ## GitHub workflow
