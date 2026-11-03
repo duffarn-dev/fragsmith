@@ -1,10 +1,11 @@
 """Tests for lib/kinetic.py and the kinetic text path in the editing engine.
 
 Covers: the slam curve, the rendered clip (rgba, 60 fps, length, the
-overshoot is bigger than the settled text, the fade-out, a held last frame),
-the cache, the filter graph (movie sources instead of drawtext, placed at
-their start, under the letterbox), and that the text only changes the
-picture inside its window.
+overshoot is bigger than the settled text, the fade-out, a held last frame,
+the amber fill of the kill tags), the cache, the filter graph (movie sources
+instead of drawtext for the overlay text, the counter and the kill tags,
+placed at their start, under the letterbox), and that the text only changes
+the picture inside its window.
 
 Run: python tests/test_kinetic.py
 """
@@ -21,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from lib.edit_engine import _build_filter  # noqa: E402
-from lib.kinetic import kinetic_clip, scale_at  # noqa: E402
+from lib.kinetic import AMBER, WHITE, kinetic_clip, scale_at  # noqa: E402
 from lib.models import EditDecision  # noqa: E402
 
 FAILS: list[str] = []
@@ -53,6 +54,20 @@ def alpha_of(clip: Path, n: int) -> tuple[int, int]:
     alphas = raw[3::4]
     cols = [i % w for i, a in enumerate(alphas) if a > 40]
     return max(alphas), (max(cols) - min(cols) if cols else 0)
+
+
+def letter_color(clip: Path, n: int) -> tuple[int, int, int]:
+    """The average color of frame n's opaque, bright pixels: the letters,
+    without the black stroke or the glow."""
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(clip), "-vf", f"select='eq(n\\,{n})'",
+         "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"],
+        capture_output=True, check=True).stdout
+    px = [raw[i:i + 3] for i in range(0, len(raw), 4)
+          if raw[i + 3] == 255 and raw[i] > 200]
+    if not px:
+        return (0, 0, 0)
+    return tuple(round(sum(p[c] for p in px) / len(px)) for c in range(3))
 
 
 def gray_frame(path: Path, t: float) -> bytes:
@@ -101,6 +116,19 @@ def test_clip(tmp: Path) -> None:
     again, _, _ = kinetic_clip("3K", 110, 1.0, tmp / "k", log)
     check("cached: the same clip, not redrawn", again == clip and clip.stat().st_mtime_ns == mtime)
     check("the frames are cleaned up", not any(p.is_dir() for p in (tmp / "k").iterdir()))
+    white, _, _ = kinetic_clip("3K", 110, 1.0, tmp / "k", log, fill=WHITE)
+    check("white is the default and keeps its cache key", white == clip)
+    # antialiased edges pull the average a few steps off the fill
+    def near(color: tuple, target: tuple) -> bool:
+        return all(abs(a - b) <= 6 for a, b in zip(color, target))
+
+    color = letter_color(clip, 30)
+    check("the default letters are white", near(color, WHITE), str(color))
+    amber, _, _ = kinetic_clip("NOSCOPE", 46, 1.1, tmp / "k", log, fill=AMBER)
+    color = letter_color(amber, 30)
+    check("a kill tag's letters are amber", near(color, AMBER), str(color))
+    again_amber, _, _ = kinetic_clip("NOSCOPE", 46, 1.1, tmp / "k", log)
+    check("the fill is part of the cache key", again_amber != amber)
 
 
 def test_graph(tmp: Path) -> None:
@@ -124,6 +152,20 @@ def test_graph(tmp: Path) -> None:
                                 counter=counter)
     check("without kinetic_dir: drawtext as before", "movie=" not in plain
           and plain.count("drawtext") == 4)
+
+    tags = [(1.0, "NOSCOPE"), (2.5, "WALLBANG  ·  42 M")]
+    tagged, _, _ = _build_filter([(0.0, 4.0, 1.0)], decision(None), PLAIN_FX, None,
+                                 tags=tags, kinetic_dir=tmp / "k", log_path=log)
+    check("kill tags: one movie source each", tagged.count("movie=") == 2)
+    check("kill tags: no drawtext", "drawtext" not in tagged)
+    check("kill tags: placed on their kill",
+          all(f"setpts=PTS+{s:.3f}/TB" in tagged for s, _ in tags))
+    check("kill tags: none of them holds", tagged.count("eof_action=pass") == 2
+          and "eof_action=repeat" not in tagged)
+    plain_tags, _, _ = _build_filter([(0.0, 4.0, 1.0)], decision(None), PLAIN_FX, None,
+                                     tags=tags)
+    check("kill tags without kinetic_dir: amber drawtext",
+          "movie=" not in plain_tags and plain_tags.count("fontcolor=0xFFB347") == 2)
 
 
 def test_window(tmp: Path) -> None:

@@ -20,6 +20,7 @@ from lib.ffmpeg_util import FONT_FILE, run_ffmpeg
 FONT_PATH = FONT_FILE.replace("\\:", ":")  # FONT_FILE is escaped for filters
 FPS = 60
 AMBER = (255, 179, 71)
+WHITE = (255, 255, 255)
 SLAM_S = 0.12    # from 1.9x down past the target, to 0.94x
 SETTLE_S = 0.22  # back up to 1.0x
 OUT_S = 0.3      # the fade-out, while the letters spread apart
@@ -75,6 +76,7 @@ def kinetic_clip(
     out_dir: Path,
     log_path: Path,
     fade_out: bool = True,
+    fill: tuple[int, int, int] = WHITE,
 ) -> tuple[Path, int, int]:
     """The text's animation as a .mov with alpha at 60 fps, plus its canvas
     size. The canvas is centered on the text and 2.1x its box, so the
@@ -82,7 +84,8 @@ def kinetic_clip(
     the 9:16 pass and a re-run of `finish` reuse it.
 
     fade_out=False keeps the last frame settled, for a text the overlay
-    holds until the segment ends (the counter's last tick)."""
+    holds until the segment ends (the counter's last tick). fill is the
+    letters' color (the kill tags are amber)."""
     from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -90,9 +93,11 @@ def kinetic_clip(
     cw, ch = int(tw * 2.1) + 80, int(th * 2.1) + 80
     cw += cw % 2
     ch += ch % 2
-    key = hashlib.sha1(
-        f"{LOOK_VERSION}|{text}|{size}|{seconds:.3f}|{fade_out}".encode("utf-8")
-    ).hexdigest()[:12]
+    # white keeps the key it had before fill existed, so cached clips stay valid
+    look = f"{LOOK_VERSION}|{text}|{size}|{seconds:.3f}|{fade_out}"
+    if fill != WHITE:
+        look += f"|{fill}"
+    key = hashlib.sha1(look.encode("utf-8")).hexdigest()[:12]
     clip = out_dir / f"text_{key}.mov"
     if clip.exists():
         return clip, cw, ch
@@ -116,7 +121,7 @@ def kinetic_clip(
         layer = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
         draw = ImageDraw.Draw(layer)
         for c, adv in zip(text, advances):
-            draw.text((x, ch / 2), c, font=font, fill=(255, 255, 255, 255),
+            draw.text((x, ch / 2), c, font=font, fill=fill + (255,),
                       anchor="lm", stroke_width=stroke, stroke_fill=(0, 0, 0, 255))
             x += adv + spacing
         # The glow is the text's shape grown and blurred at quarter size

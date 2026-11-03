@@ -53,6 +53,7 @@ Traps and facts discovered while building Fragsmith. Read this before changing t
   - place it with `setpts=PTS+start/TB`
   - remove it at its end with `eof_action=pass`, or hold its last frame with `eof_action=repeat`
   - then `format=yuv420p`, because of the RGBA overlay
+- **A new argument in a cache key renames every cached clip.** `kinetic_clip` only adds `fill` to its key when it isn't white, so the overlay and counter clips already in `04-segments/kinetic/` keep their names and aren't drawn again.
 - **A fade-in hides a slam.** With a 0.05 s alpha ramp, the 1.9x frames of the kinetic slam were nearly transparent and only ~1.3x showed. The alpha now reaches full in 3 frames.
 - **Check a small overlay in a crop around it, not in the whole frame.** "3K" at 88 px is ~0.5 % of a 1080p frame, so a whole-frame difference stays under 0.5 with the text on.
 - A single-image overlay input (`-i logo.png`) stopped showing after the first part of a concat input. Loop it (`-loop 1 -i logo.png`) and end it with `overlay=...:shortest=1`.
