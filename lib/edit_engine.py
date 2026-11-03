@@ -483,6 +483,7 @@ def _build_filter(
     layers: list[tuple[Path, float, int, int, bool]] = []
     # the text's accent color and animation ([effects].text_color/_animation)
     look = {"accent": text_color(effects), "animation": text_animation(effects)}
+    accent_hex = "%02X%02X%02X" % look["accent"]  # for the drawtext fallback
     if decision.overlay_text and kinetic_dir is not None:
         # same place and window as the drawtext version (y is its top edge)
         clip, cw, ch = kinetic_clip(decision.overlay_text, 88, 2.8, kinetic_dir, log_path,
@@ -555,7 +556,7 @@ def _build_filter(
             vf.append(
                 f"drawtext=fontfile='{FONT_FILE}'"
                 f":text='{drawtext_escape(label)}':expansion=none"
-                f":fontsize=46:fontcolor=0x{"%02X%02X%02X" % look["accent"]}:borderw=4:bordercolor=black"
+                f":fontsize=46:fontcolor=0x{accent_hex}:borderw=4:bordercolor=black"
                 f":x=(w-text_w)/2:y=h*0.57"
                 f":enable='between(t,{start:.3f},{start + 1.1:.3f})'"
                 f":alpha='if(lt(t-{start:.3f},0.1),(t-{start:.3f})/0.1,"
