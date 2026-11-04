@@ -70,7 +70,9 @@ def build_render_job(
             clip["framerate"] = fps_by_clip[d.clip_id]
         clips.append(clip)
     return {
-        "schema_version": "1.3",  # 1.1: + true_view/show_xray · 1.2: + alt_pov · 1.3: + framerate per clip
+        # 1.1: + true_view/show_xray · 1.2: + alt_pov · 1.3: + framerate per
+        # clip · 1.4: + cfg per clip (commands csdm runs before the sequence)
+        "schema_version": "1.4",
         "run_id": run_id,
         "demo_filename": Path(plan.demo_path).name,
         "pov_steamid": pov_steamid,
