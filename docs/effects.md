@@ -105,6 +105,16 @@ Your own look on every film, set in `[branding]`. Paths are relative to the Frag
 
 The logo costs one extra encode of the film (about 12 s for a one-minute film). Without a logo, nothing changes.
 
+## Teaser
+
+`python main.py finish runs/<id> --teaser` makes `teaser.mp4` next to `final.mp4`: about 30 s, landscape, from the same raw clips, with no extra render.
+
+- **Before the drop:** the weaker kills, each cut shorter than the last (1.25× speed), so they speed up into the drop.
+- **On the drop:** the climax kill as in the velocity cold open: in, slow-mo, rewound, then at normal speed. The normal-speed kill lands on the music's drop, with a boom.
+- **After the drop:** the stronger kills in quicker cuts (1.5×), then a short end card with your outro image.
+- **Every moment once:** kills in one clip less than 3 s apart are one cut (a double or triple kill), and the ones just before the climax kill are in its rewind.
+- **The length depends on the match.** 30 s of quick cuts takes about a dozen kill moments. With fewer, the teaser is shorter, and the drop stays about in the middle (a match with 6 kills makes about 15 s).
+
 ## Vertical 9:16 (Shorts, TikTok)
 
 `python main.py finish runs/<id> --vertical` makes `final-vertical.mp4` (1080×1920) next to `final.mp4`. It's the same edit, from the same raw clips, with the same music and beat sync, and it needs no extra render.

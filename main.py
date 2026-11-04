@@ -719,6 +719,25 @@ def cmd_finish(args: argparse.Namespace) -> int:
             flags.extend(f for f in vflags if f not in flags)
             print(f"    {vertical.name} in {time.monotonic() - t0:.0f} s")
 
+    teaser = None
+    if getattr(args, "teaser", False):
+        from lib.teaser import build_teaser
+
+        print("Teaser: quick cuts, the climax on the drop ...")
+        drops = beats.get("drops") or []
+        drop_track_s = (
+            drop_info["drop_track_s"] if drop_info
+            else (float(drops[0]["time_s"]) if drops else None)
+        )
+        try:
+            teaser = build_teaser(plan, candidates_by_id, clips_dir, music_path,
+                                  drop_track_s, run_dir, cfg, log_path)
+        except (FfmpegError, ValueError) as exc:  # the film is done either way
+            flags.append(f"No teaser: {str(exc).splitlines()[0]}")
+        else:
+            print(f"    {teaser[0].name}: {teaser[1]['seconds']:.1f} s, "
+                  f"the drop at {teaser[1]['drop_s']:.1f} s")
+
     thumbnail = None
     if editing.get("thumbnail", True):
         from lib.thumbnail import make_thumbnail
@@ -733,7 +752,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
 
     report = write_report(
         plan, candidates_by_id, cut_log, flags, beats_used, final, run_dir,
-        events=events, thumbnail=thumbnail, vertical=vertical,
+        events=events, thumbnail=thumbnail, vertical=vertical, teaser=teaser,
     )
 
     if flags:
@@ -747,6 +766,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
         print(f"Thumbnail: {thumbnail}")
     if vertical:
         print(f"Vertical: {vertical}")
+    if teaser:
+        print(f"Teaser: {teaser[0]}")
     print(f"Raw clips are kept until you've watched the film — "
           f"delete them with: python main.py cleanup {args.run_dir}")
     return 0
@@ -916,6 +937,10 @@ def main() -> int:
     fin_p.add_argument(
         "--vertical", action="store_true",
         help="Also make final-vertical.mp4 (9:16, for Shorts/TikTok) from the same clips",
+    )
+    fin_p.add_argument(
+        "--teaser", action="store_true",
+        help="Also make teaser.mp4: ~30 s of quick cuts with the climax on the music's drop",
     )
     fin_p.set_defaults(func=cmd_finish)
 

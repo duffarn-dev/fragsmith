@@ -376,10 +376,12 @@ def _velocity_quick(clip: Path, offset: float, out: Path, log_path: Path, frame:
     )
 
 
-def _velocity_last(clip: Path, offset: float, out: Path, log_path: Path, frame: Frame) -> None:
+def _velocity_last(clip: Path, offset: float, out: Path, log_path: Path, frame: Frame) -> float:
     """The last kill: it comes in like the quick ones, drops into slow-mo on
     the kill, rewinds from slow up to normal speed to before the kill, and
-    then plays at normal speed. The rewind is silent, like the replay's."""
+    then plays at normal speed. The rewind is silent, like the replay's.
+    Returns when the normal-speed kill happens in the output (the teaser
+    puts it on the drop)."""
     src_fps = probe_fps(clip)
     slow = velocity_slow_factor(src_fps)
     start = max(0.0, offset - max(VELOCITY_REWIND_TO_S, VELOCITY_RUN_PRE_S))
@@ -431,6 +433,7 @@ def _velocity_last(clip: Path, offset: float, out: Path, log_path: Path, frame: 
         log_path,
         f"step 7: velocity cold open, the last kill ({out.stem})",
     )
+    return sum((b - a) / s for a, b, s in forward) + rew_s + (t - rew_from)
 
 
 def build_intro_hook(
@@ -795,6 +798,7 @@ def write_report(
     events: dict | None = None,
     thumbnail: Path | None = None,
     vertical: Path | None = None,
+    teaser: tuple[Path, dict] | None = None,
 ) -> Path:
     final_duration = probe_duration(final_path)
     lines = [
@@ -810,6 +814,12 @@ def write_report(
     if vertical:
         lines.append(
             f"**Vertical:** {vertical.name} ({probe_duration(vertical):.1f} s, 9:16)"
+        )
+    if teaser:
+        path, info = teaser
+        lines.append(
+            f"**Teaser:** {path.name} ({info['seconds']:.1f} s, {info['kills']} kills, "
+            f"the drop at {info['drop_s']:.1f} s)"
         )
     # the drop sync decision (put in the beats dict by cmd_finish)
     ds = beats.get("drop_sync")
