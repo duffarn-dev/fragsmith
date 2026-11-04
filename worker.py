@@ -194,14 +194,20 @@ def build_csdm_configs(job: dict, demo_path: Path, raw_dir: Path) -> list[dict]:
                 }
             ],
         }
+        # Game and HLAE commands csdm runs before the sequence (schema 1.4):
+        # a camera, spec_mode, mirv_*. Older jobs have none
+        if clip.get("cfg"):
+            seq["cfg"] = str(clip["cfg"])
         by_fps.setdefault(fps, []).append(seq)
         # Extra sequence with the same tick range from the VICTIM's POV
         # (instant replay) — inherits the clip's framerate (the replay
         # slows down exactly this angle). Older jobs: no extra sequence.
         if clip.get("alt_pov_steamid"):
+            # the replay is the victim's own eyes, not the clip's camera
+            plain = {k: v for k, v in seq.items() if k != "cfg"}
             by_fps[fps].append(
                 {
-                    **seq,
+                    **plain,
                     "number": clip["number"] + ALT_SEQ_OFFSET,
                     "showXRay": False,
                     "playerCameras": [
