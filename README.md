@@ -20,7 +20,7 @@ Point Fragsmith at a `.dem` file. It finds your best rounds, renders them from y
 - **Real slow-mo.** Slow-motion clips are rendered at 120 fps, so they're smooth instead of stuttery.
 - **Effects that hit the kills.** Kill zoom, dutch tilt, headshot punch, freeze frame, text and a kill counter that slam in, instant replay from the victim's POV, letterbox, color grade, film grain, impacts on the kills with music ducking, and a beat of silence and a boom on the music's drop. A whoosh into every cut and a riser into the drop are there to turn on. Pick a style (`clean`, `hype`, `cinematic`, or the packs `neon`, `rage`, `dream`) or turn each one on or off yourself: [docs/effects.md](docs/effects.md).
 - **Your own look.** Your images behind the intro and outro, your logo on the film, and a ready thumbnail of the climax kill.
-- **Shorts and TikTok too.** `finish --vertical` makes a 9:16 version of the same film from the same clips, with no extra render. `finish --teaser` adds a ~30 s teaser: quick cuts, and the climax in slow-mo and rewound onto the music's drop.
+- **Shorts and TikTok too.** `finish --vertical` makes a 9:16 version of the same film from the same clips, with no extra render. `finish --teaser` adds a ~30 s teaser: quick cuts, and the climax in slow-mo and rewound onto the music's drop. `teaser <run> <run> ...` makes one from several matches.
 - **You stay in control.** Fragsmith stops after the edit plan and shows what it will render and how long it'll take. Nothing renders until you say so. Every film comes with a `report.md` explaining the choices.
 - **One PC or two.** Render on your own PC, or hand rendering to a second PC and keep using your main one.
 

@@ -730,7 +730,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
             else (float(drops[0]["time_s"]) if drops else None)
         )
         try:
-            teaser = build_teaser(plan, candidates_by_id, clips_dir, music_path,
+            teaser = build_teaser([(plan, candidates_by_id, clips_dir)], music_path,
                                   drop_track_s, run_dir, cfg, log_path)
         except (FfmpegError, ValueError) as exc:  # the film is done either way
             flags.append(f"No teaser: {str(exc).splitlines()[0]}")
@@ -824,6 +824,61 @@ def cmd_batch(args: argparse.Namespace) -> int:
     print("Next: review the edit plans and render the ones you want "
           "(python main.py render runs/<id>).")
     return 1 if failed else 0
+
+
+def cmd_teaser(args: argparse.Namespace) -> int:
+    """A teaser from several finished runs ("best of the week"): the kills
+    of all of them, the best climax kill on the music's drop."""
+    from datetime import datetime
+
+    from lib.beats import analyze_beats
+    from lib.ffmpeg_util import FfmpegError
+    from lib.models import EditPlan, Highlight
+    from lib.teaser import build_teaser
+
+    cfg = load_config()
+    sources = []
+    for arg in args.run_dirs:
+        run_dir = Path(arg) if Path(arg).is_absolute() else PROJECT_DIR / arg
+        clips_dir = run_dir / "03-raw-clips"
+        try:
+            plan = EditPlan.model_validate_json(
+                (run_dir / "02-edit-plan.json").read_text(encoding="utf-8"))
+            cands = json.loads((run_dir / "01-candidates.json").read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            print(f"    skipped {run_dir.name}: no edit plan (run `run` first)")
+            continue
+        if not any(clips_dir.glob("*.mp4")):
+            print(f"    skipped {run_dir.name}: no raw clips (deleted by cleanup?)")
+            continue
+        candidates_by_id = {c["clip_id"]: Highlight.model_validate(c) for c in cands["candidates"]}
+        sources.append((plan, candidates_by_id, clips_dir))
+    if not sources:
+        print("STOPPED: none of the runs has an edit plan and raw clips.")
+        return 1
+    music_dir = Path(cfg.get("music", {}).get("music_dir", ""))
+    music_path = Path(args.music) if args.music else Path(sources[0][0].music_track)
+    if not music_path.is_absolute():
+        # by name, also in subfolders and without the extension
+        found = [p for p in sorted(music_dir.rglob("*"))
+                 if p.name == music_path.name or p.stem == music_path.name]
+        music_path = found[0] if found else music_dir / music_path
+    if not music_path.exists():
+        print(f"STOPPED: can't find the music '{music_path}'.")
+        return 1
+    out_dir = Path(args.out) if args.out else PROJECT_DIR / "runs" / f"teaser-{datetime.now():%Y%m%d-%H%M%S}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    drops = analyze_beats(music_path).get("drops") or []
+    print(f"Teaser from {len(sources)} runs, music {music_path.name} ...")
+    try:
+        path, info = build_teaser(sources, music_path, float(drops[0]["time_s"]) if drops else None,
+                                  out_dir, cfg, out_dir / "ffmpeg.log")
+    except (FfmpegError, ValueError) as exc:
+        print(f"STOPPED: {str(exc).splitlines()[0]}")
+        return 1
+    print(f"DONE: {path} ({info['seconds']:.1f} s, {info['kills']} kills, "
+          f"the drop at {info['drop_s']:.1f} s)")
+    return 0
 
 
 def cmd_cleanup(args: argparse.Namespace) -> int:
@@ -957,6 +1012,14 @@ def main() -> int:
         help="Effect style for every film (overrides [style].preset)",
     )
     batch_p.set_defaults(func=cmd_batch)
+
+    teaser_p = sub.add_parser(
+        "teaser", help="A ~30 s teaser from several finished runs (\"best of the week\")")
+    teaser_p.add_argument("run_dirs", nargs="+", help="Paths to runs/<id>/ (their raw clips are used)")
+    teaser_p.add_argument("--music", help="Music file (name in the music folder, or a path); "
+                                          "default: the first run's track")
+    teaser_p.add_argument("--out", help="Folder for teaser.mp4 (default: runs/teaser-<time>/)")
+    teaser_p.set_defaults(func=cmd_teaser)
 
     clean_p = sub.add_parser("cleanup", help="Delete raw clips/segments for a run")
     clean_p.add_argument("run_dir", help="Path to runs/<id>/")

@@ -114,6 +114,7 @@ The logo costs one extra encode of the film (about 12 s for a one-minute film). 
 - **After the drop:** the stronger kills in quicker cuts (1.5×), then a short end card with your outro image.
 - **Every moment once:** kills in one clip less than 3 s apart are one cut (a double or triple kill), and the ones just before the climax kill are in its rewind.
 - **The length depends on the match.** 30 s of quick cuts takes about a dozen kill moments. With fewer, the teaser is shorter, and the drop stays about in the middle (a match with 6 kills makes about 15 s).
+- **Best of the week:** `python main.py teaser runs/<id> runs/<id> ... --music "<song>"` makes one from several finished runs, so there are enough kills for 30 s. The best climax kill of them all goes on the drop, and the others' climax kills are cuts. It uses the runs' raw clips, so run it before `cleanup`. The song is found by name in the music folder, subfolders included, with or without its extension. Four matches made 30.7 s with 23 kills.
 
 ## Vertical 9:16 (Shorts, TikTok)
 

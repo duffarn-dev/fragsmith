@@ -10,7 +10,9 @@ the slow-mo and rewind. So:
 - a short end card
 
 A match has a limited number of kills: when there aren't enough to fill 30 s,
-the teaser is shorter, and the drop stays about in the middle.
+the teaser is shorter, and the drop stays about in the middle. `python
+main.py teaser <run> <run> ...` makes one from several matches ("best of the
+week"), so there are enough.
 """
 from __future__ import annotations
 
@@ -39,11 +41,30 @@ MUSIC_FADE_OUT_S = 1.5
 GAME_VOLUME = 0.3
 
 
-def _kills(plan: EditPlan, candidates_by_id: dict, clips_dir: Path) -> tuple[tuple | None, list]:
-    """(the hero kill, the others by rising score): (score, clip, offset).
-    The hero is the climax clip's last kill. Kills in one clip closer than
-    MERGE_S are one cut (a double or triple kill, on its last kill), so no
-    moment shows twice; the ones just before the hero are in its rewind."""
+def _kills(sources: list[tuple[EditPlan, dict, Path]]) -> tuple[tuple | None, list]:
+    """(the hero kill, the others by rising score): (score, clip, offset),
+    from one or more runs (plan, candidates by id, raw clips folder). The
+    hero is the best climax clip's last kill; another run's climax kill is
+    one of the others. Kills in one clip closer than MERGE_S are one cut (a
+    double or triple kill, on its last kill), so no moment shows twice; the
+    ones just before a climax kill go with it."""
+    heroes, others = [], []
+    for plan, candidates_by_id, clips_dir in sources:
+        hero, rest = _run_kills(plan, candidates_by_id, clips_dir)
+        others += rest
+        if hero:
+            heroes.append(hero)
+    heroes.sort(key=lambda p: p[0])
+    hero = heroes.pop() if heroes else None
+    others += [(score - 100.0, clip, off) for score, clip, off in heroes]
+    if hero is None and others:
+        others.sort(key=lambda p: p[0])
+        hero = others.pop()
+    return hero, sorted(others, key=lambda p: p[0])
+
+
+def _run_kills(plan: EditPlan, candidates_by_id: dict, clips_dir: Path) -> tuple[tuple | None, list]:
+    """One run's climax kill (scored +100) and its other kills."""
     climax = _climax_clip_id(plan)
     hero, others = None, []
     for d in plan.decisions:
@@ -64,10 +85,7 @@ def _kills(plan: EditPlan, candidates_by_id: dict, clips_dir: Path) -> tuple[tup
                 hero = (score + 100.0, clip, g[-1].offset_s)
             else:
                 others.append((score, clip, g[-1].offset_s))
-    if hero is None and others:
-        others.sort(key=lambda p: p[0])
-        hero = others.pop()
-    return hero, sorted(others, key=lambda p: p[0])
+    return hero, others
 
 
 def cut_lengths(n: int, total: float, first: float, last: float) -> list[float]:
@@ -101,9 +119,7 @@ def _cut(clip: Path, offset: float, length: float, speed: float, out: Path,
 
 
 def build_teaser(
-    plan: EditPlan,
-    candidates_by_id: dict,
-    clips_dir: Path,
+    sources: list[tuple[EditPlan, dict, Path]],
     music_path: Path,
     drop_track_s: float | None,
     run_dir: Path,
@@ -111,12 +127,14 @@ def build_teaser(
     log_path: Path,
 ) -> tuple[Path, dict]:
     """teaser.mp4 in run_dir, and what's in it: {"seconds", "drop_s",
-    "kills"}. drop_track_s: where the track's drop is (None: the music
-    starts at the beginning of the track)."""
+    "kills"}. sources: the runs to take kills from, (plan, candidates by
+    id, raw clips folder); one for `finish --teaser`. drop_track_s: where
+    the track's drop is (None: the music starts at the beginning)."""
     frame = LANDSCAPE
     work = run_dir / "04-segments-teaser"
     work.mkdir(parents=True, exist_ok=True)
-    hero, others = _kills(plan, candidates_by_id, clips_dir)
+    plan = sources[0][0]
+    hero, others = _kills(sources)
     if hero is None:
         raise ValueError("no kills in the rendered clips")
 
