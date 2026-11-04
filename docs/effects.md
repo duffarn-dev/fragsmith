@@ -58,6 +58,8 @@ preset = "hype"   # custom | clean | hype | cinematic
 | Slow-mo push-in | `[effects].slowmo_punch` | Slow push-in zoom during slow-mo segments |
 | Headshot punch | `[effects].headshot_punch`, `headshot_punch_strength` | "Zoom in slowly, snap out fast" on headshots |
 | Impact split | `[effects].impact_split` | 3 frames of color-channel shift on big kills |
+| Impact shake | `[effects].impact_shake` | The picture shakes on big kills (the same kills as the impact split) and settles in 0.35 s. It zooms in 4 % while it shakes, so no edge shows. `impact_shake_strength` (1.0) scales the swing. The text doesn't shake. Unlike `wobble`, nothing moves between kills |
+| Glow | `[effects].glow` | Bloom: the bright parts of the picture glow, like light in a lens. 0.0 is off, 1.0 is strong. Only the brightness, so the colors don't shift |
 | Flash transitions | `[effects].flash_transitions` | White flash into clips where the Director chose a hard cut |
 | Transitions | `[effects].transitions` | A transition on each change from one clip to the next, taking turns through the list: `whip` (a fast pan smeared sideways, 0.27 s), `zoom` (a push into the next clip, 0.33 s), `glitch` (a mosaic with a color split, 0.2 s). The beat stays on the cut: the transition is centered on it, so the film's timing and the drop don't move. The Claude Director can pick one per clip; `"fade"` and the replay keep their own entrance. Replaces the white flash where it's used. `[]` = hard cuts |
 | Wobble | `[effects].wobble` | Beat-synced shake. Off by default because it can feel restless |
