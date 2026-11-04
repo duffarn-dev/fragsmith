@@ -20,7 +20,7 @@ Point Fragsmith at a `.dem` file. It finds your best rounds, renders them from y
 - **Real slow-mo.** Slow-motion clips are rendered at 120 fps, so they're smooth instead of stuttery.
 - **Effects that hit the kills.** Kill zoom, dutch tilt, headshot punch, freeze frame, text and a kill counter that slam in, instant replay from the victim's POV, letterbox, color grade, film grain, impacts on the kills with music ducking, and a beat of silence and a boom on the music's drop. A whoosh into every cut and a riser into the drop are there to turn on. Pick a style (`clean`, `hype`, `cinematic`, or the packs `neon`, `rage`, `dream`) or turn each one on or off yourself: [docs/effects.md](docs/effects.md).
 - **Your own look.** Your images behind the intro and outro, your logo on the film, and a ready thumbnail of the climax kill.
-- **Shorts and TikTok too.** `finish --vertical` makes a 9:16 version of the same film from the same clips, with no extra render.
+- **Shorts and TikTok too.** `finish --vertical` makes a 9:16 version of the same film from the same clips, with no extra render. `finish --teaser` adds a ~30 s teaser: quick cuts, and the climax in slow-mo and rewound onto the music's drop.
 - **You stay in control.** Fragsmith stops after the edit plan and shows what it will render and how long it'll take. Nothing renders until you say so. Every film comes with a `report.md` explaining the choices.
 - **One PC or two.** Render on your own PC, or hand rendering to a second PC and keep using your main one.
 
@@ -81,6 +81,7 @@ python main.py run <demo.dem>        # steps 1–3, shows the edit plan and stop
 python main.py render runs/<id>      # step 4, renders the clips (your approval)
 python main.py finish runs/<id>      # steps 5–7, creates final.mp4 + report.md
                                      #   --vertical also makes final-vertical.mp4 (9:16)
+                                     #   --teaser also makes teaser.mp4 (~30 s)
 python main.py batch <folder>        # steps 1–3 for every demo in a folder
 python main.py cleanup runs/<id>     # deletes raw clips and intermediate files
 ```
