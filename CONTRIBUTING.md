@@ -51,6 +51,7 @@ python tests/test_screen_fx.py
 python tests/test_velocity_intro.py
 python tests/test_campath.py
 python tests/test_teaser.py
+python tests/test_bullet_time.py
 python tests/test_sound_design.py
 python tests/test_hype_score.py
 python tests/test_motion_blur.py

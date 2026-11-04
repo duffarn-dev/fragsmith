@@ -60,6 +60,7 @@ motion_blur_shutter = 180
 # and note the result in learnings_runtime.md. X-ray is set automatically per
 # clip (ace/clutch/AWP) and has no flag of its own here.
 true_view = true
+cinematic_approach = "off"  # "climax": the climax clip in third person until 1.5 s before the first kill
 
 [selftest]
 # `python main.py selftest` uses the newest .dem/.dem.bz2 in this folder
@@ -133,6 +134,7 @@ impact_shake = false     # the picture shakes on big kills and settles in 0.35 s
 impact_shake_strength = 1.0
 glow = 0.0               # bloom on the bright parts: 0.0 off, 1.0 strong
 instant_replay = true    # the climax kill is rewound and shown in slow-mo from the
+replay_style = "victim"  # "bullet_time": the camera circles you once around the kill, at 0.25x (the matrix style)
                          # victim's POV (needs an extra render pass: more render time/disk)
 
 [editing]
