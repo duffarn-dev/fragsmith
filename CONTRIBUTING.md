@@ -48,6 +48,7 @@ python tests/test_kill_tags.py
 python tests/test_audio_sync.py
 python tests/test_kinetic.py
 python tests/test_screen_fx.py
+python tests/test_velocity_intro.py
 python tests/test_sound_design.py
 python tests/test_hype_score.py
 python tests/test_motion_blur.py

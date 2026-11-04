@@ -17,6 +17,7 @@ from lib.ffmpeg_util import (
     drawtext_escape,
     mean_volume,
     probe_duration,
+    probe_fps,
     probe_video_start,
     run_ffmpeg,
 )
@@ -312,6 +313,87 @@ def _stats_card(
     )
 
 
+# The velocity cold open ([effects].intro_hook_style = "velocity"): each kill
+# comes in fast, drops to slow-mo on the kill and goes out fast. Seconds of
+# source per part, around the kill
+VELOCITY_IN_S = 0.5
+VELOCITY_SLOW_S = 0.3   # centered on the kill
+VELOCITY_OUT_S = 0.3
+VELOCITY_FAST = 2.0
+VELOCITY_KILLS = 5      # [effects].intro_hook_kills
+
+
+def velocity_slow_factor(src_fps: float) -> float:
+    """How slow the kill plays: as slow as the clip has real frames for at
+    60 fps (0.25x from 240 fps up), never faster than 0.5x."""
+    return min(0.5, max(0.25, 60.0 / max(1.0, src_fps)))
+
+
+def _velocity_picks(plan: EditPlan, candidates_by_id: dict, clips_dir: Path, n: int):
+    """The n best kills across the clips, rising, the best last: (score,
+    clip, offset). Kills in one clip are at least one glimpse apart, so no
+    moment shows twice."""
+    span = VELOCITY_IN_S + VELOCITY_SLOW_S + VELOCITY_OUT_S
+    scored = []
+    for d in plan.decisions:
+        cand = candidates_by_id.get(d.clip_id)
+        clip = clips_dir / f"{d.clip_id}.mp4"
+        kills = getattr(cand, "kills", None) if cand else None
+        if not kills or not clip.exists():
+            continue
+        for i, k in enumerate(kills):
+            last = 0.3 if i + 1 == len(kills) else 0.0
+            scored.append((cand.hype_score + (0.5 if k.headshot else 0.0) + last, clip, k.offset_s))
+    picks: list = []
+    for p in sorted(scored, key=lambda p: -p[0]):
+        if all(q[1] != p[1] or abs(q[2] - p[2]) >= span for q in picks):
+            picks.append(p)
+        if len(picks) >= n:
+            break
+    return sorted(picks, key=lambda p: p[0])
+
+
+def _atempo(speed: float) -> str:
+    """atempo for any speed: one filter takes 0.5-2.0, so slower is a chain
+    whose product is exactly the speed (the sound stays as long as the picture)."""
+    steps = []
+    while speed < 0.5:
+        steps.append("atempo=0.5")
+        speed /= 0.5
+    steps.append(f"atempo={speed:.4f}")
+    return ",".join(steps)
+
+
+def _velocity_glimpse(clip: Path, offset: float, out: Path, log_path: Path, frame: Frame) -> None:
+    """Fast in, slow on the kill, fast out: three trims of one window, each
+    with its own speed, joined. The slow part uses the clip's real frames
+    (velocity_slow_factor)."""
+    slow = velocity_slow_factor(probe_fps(clip))
+    start = max(0.0, offset - VELOCITY_SLOW_S / 2 - VELOCITY_IN_S)
+    a = offset - VELOCITY_SLOW_S / 2 - start  # where the slow part starts
+    b = a + VELOCITY_SLOW_S
+    c = b + VELOCITY_OUT_S
+    parts = [(0.0, a, VELOCITY_FAST, _atempo(VELOCITY_FAST)), (a, b, slow, _atempo(slow)),
+             (b, c, VELOCITY_FAST, _atempo(VELOCITY_FAST))]
+    chains = [f"[0:v]{frame.normalize()},split=3[s0][s1][s2]", "[0:a]asplit=3[a0][a1][a2]"]
+    for i, (t0, t1, speed, atempo) in enumerate(parts):
+        chains.append(f"[s{i}]trim={t0:.3f}:{t1:.3f},setpts=(PTS-STARTPTS)/{speed}[v{i}]")
+        chains.append(f"[a{i}]atrim={t0:.3f}:{t1:.3f},asetpts=PTS-STARTPTS,{atempo}[b{i}]")
+    chains.append("[v0][b0][v1][b1][v2][b2]concat=n=3:v=1:a=1[vc][ac]")
+    chains.append("[vc]fade=t=in:st=0:d=0.05:color=white[vout]")
+    run_ffmpeg(
+        [
+            "-ss", f"{start:.3f}", "-t", f"{c + 0.05:.3f}", "-i", str(clip),
+            "-filter_complex", ";".join(chains),
+            "-map", "[vout]", "-map", "[ac]",
+            *ENCODE_ARGS,
+            str(out),
+        ],
+        log_path,
+        f"step 7: velocity cold open ({out.stem})",
+    )
+
+
 def build_intro_hook(
     plan: EditPlan,
     candidates_by_id: dict | None,
@@ -321,7 +403,9 @@ def build_intro_hook(
     log_path: Path,
     frame: Frame = LANDSCAPE,
 ) -> list[Path]:
-    """Cold open: up to 3 micro glimpses (0.25 s) of the top kills, cut
+    """Cold open: up to 3 micro glimpses (0.25 s) of the top kills, or with
+    intro_hook_style = "velocity" up to intro_hook_kills of them, each fast
+    in, slow on the kill and fast out (_velocity_glimpse). Cut
     straight from the raw clips around the KillMark offsets, placed before
     the intro card. Order: rising hype, best glimpse last, right before
     the title.
@@ -335,6 +419,15 @@ def build_intro_hook(
         return []
     if not candidates_by_id or clips_dir is None:
         return []
+
+    if str(fx.get("intro_hook_style", "glimpses")).lower() == "velocity":
+        n = max(1, int(fx.get("intro_hook_kills", VELOCITY_KILLS)))
+        glimpses = []
+        for i, (_, clip, offset) in enumerate(_velocity_picks(plan, candidates_by_id, clips_dir, n)):
+            out = work / f"00_hook_{i}.mp4"
+            _velocity_glimpse(clip, offset, out, log_path, frame)
+            glimpses.append(out)
+        return glimpses
 
     picks: list[tuple[float, Path, float]] = []
     for d in plan.decisions:

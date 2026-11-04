@@ -143,6 +143,7 @@ def _on_top_of(base: str, **sections: dict) -> dict:
 # Style packs: the hype or cinematic cut with a look of its own, made from the
 # text looks, the glow and the impact shake (all off in the three above)
 STYLES["neon"] = _on_top_of("hype", effects={
+    "intro_hook_style": "velocity",
     "text_color": "cyan",
     "text_animation": "glitch",
     "glow": 0.5,
@@ -153,6 +154,8 @@ STYLES["neon"] = _on_top_of("hype", effects={
 })
 STYLES["rage"] = _on_top_of("hype", effects={
     "intensity": 1.6,
+    "intro_hook_style": "velocity",
+    "intro_hook_kills": 6,
     "text_color": "red",
     "impact_shake": True,
     "impact_shake_strength": 1.4,
