@@ -12,7 +12,7 @@ Instead of setting every switch below, pick a style:
 
 ```toml
 [style]
-preset = "hype"   # custom | clean | hype | cinematic
+preset = "hype"   # custom | clean | hype | cinematic | neon | rage | dream
 ```
 
 | Style | Looks like |
@@ -21,6 +21,11 @@ preset = "hype"   # custom | clean | hype | cinematic
 | `clean` | Grade, vignette and beat cuts. No zooms, flashes, counters, replay or sound effects, and a lower intensity |
 | `hype` | Everything on and stronger: motion blur on the climax, whip, zoom and glitch transitions, beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, kinetic text and counter, impact split, freeze, replay, louder impacts, and a gap and a boom on the drop |
 | `cinematic` | Letterbox, film grain, motion blur on the climax, zoom transitions, slow-mo push-ins, a gentle kill zoom, a long freeze, the replay, and a gap before the drop. Nothing that shakes or flashes |
+| `neon` | `hype`'s cut with cyan glitch text, a glow, the impact shake instead of the wobble, glitch and whip transitions, no grain |
+| `rage` | `hype`'s cut, harder: red text, a strong impact shake, a steeper tilt, only whip transitions |
+| `dream` | `cinematic`'s cut with a strong glow and gold text that pops in. Still nothing that shakes |
+
+The last three are style packs: a base style's cut with a look of its own. A pack is a few lines in `lib/styles.py` on top of `hype` or `cinematic`.
 
 - **Only some switches are set.** A preset sets only the switches it names (the full list is in `lib/styles.py`). Everything else keeps your value. That includes `enabled` (still the master switch), your `lut`, and the quality settings `eased_ramps` and `smooth_slowmo`.
 - **For one film:** `python main.py run <demo> --style cinematic` (also `batch --style`).

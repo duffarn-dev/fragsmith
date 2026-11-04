@@ -83,6 +83,9 @@ max_retries = 3
 #   "clean"     = grade and beat cuts; no zooms, flashes, counters or sound effects
 #   "hype"      = everything on and stronger
 #   "cinematic" = letterbox, grain, slow pushes, long freezes, the instant replay
+#   "neon"      = hype with cyan glitch text, a glow and a shake on the kills
+#   "rage"      = hype, harder: red text, a strong shake, only whip cuts
+#   "dream"     = cinematic with a strong glow and gold text that pops in
 # A preset overrides only the switches it names (docs/effects.md lists them).
 # python main.py run --style hype overrides this for one film.
 preset = "custom"

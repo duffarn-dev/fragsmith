@@ -131,6 +131,44 @@ STYLES: dict[str, dict[str, dict]] = {
 }
 
 
+def _on_top_of(base: str, **sections: dict) -> dict:
+    """A style pack: another preset with some switches changed, so it cuts
+    like its base and only looks different."""
+    pack = {section: dict(values) for section, values in STYLES[base].items()}
+    for section, values in sections.items():
+        pack[section] = {**pack.get(section, {}), **values}
+    return pack
+
+
+# Style packs: the hype or cinematic cut with a look of its own, made from the
+# text looks, the glow and the impact shake (all off in the three above)
+STYLES["neon"] = _on_top_of("hype", effects={
+    "text_color": "cyan",
+    "text_animation": "glitch",
+    "glow": 0.5,
+    "impact_shake": True,
+    "wobble": False,  # the shake on the kills is the movement
+    "grain": 0.0,
+    "transitions": ["glitch", "whip"],
+})
+STYLES["rage"] = _on_top_of("hype", effects={
+    "intensity": 1.6,
+    "text_color": "red",
+    "impact_shake": True,
+    "impact_shake_strength": 1.4,
+    "wobble": False,
+    "kill_tilt_degrees": 26.0,
+    "transitions": ["whip"],
+})
+STYLES["dream"] = _on_top_of("cinematic", effects={
+    "glow": 0.8,
+    "kinetic_text": True,
+    "text_color": "gold",
+    "text_animation": "pop",
+    "grain": 0.3,
+})
+
+
 def check_style(name: str) -> str:
     """Normalized style name, or ValueError naming the valid ones."""
     style = str(name or DEFAULT_STYLE).strip().lower()

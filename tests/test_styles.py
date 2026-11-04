@@ -82,7 +82,27 @@ def test_apply() -> None:
               not {"enabled", "lut", "eased_ramps", "smooth_slowmo"} & set(preset.get("effects", {})))
     # repr: some values are lists (transitions), which a set can't hold
     looks = {name: repr(sorted(p.get("effects", {}).items())) for name, p in STYLES.items()}
-    check("the three presets are all different", len(set(looks.values())) == len(looks))
+    check("the presets are all different", len(set(looks.values())) == len(looks))
+
+    # the packs cut like their base and only look different
+    for pack, base in (("neon", "hype"), ("rage", "hype"), ("dream", "cinematic")):
+        check(f"{pack}: the same editing and render as {base}",
+              STYLES[pack].get("editing") == STYLES[base].get("editing")
+              and STYLES[pack].get("render") == STYLES[base].get("render"))
+        check(f"{pack}: {base} is unchanged by it", STYLES[base]["effects"].get("glow") is None
+              and STYLES[base]["effects"].get("impact_shake") is None)
+    neon = apply_style({}, "neon")["effects"]
+    check("neon: cyan glitch text, glow and the shake",
+          (neon["text_color"], neon["text_animation"], neon["impact_shake"]) == ("cyan", "glitch", True)
+          and neon["glow"] > 0 and neon["kinetic_text"] is True)
+    rage = apply_style({}, "rage")["effects"]
+    check("rage: red text and a harder shake",
+          rage["text_color"] == "red" and rage["impact_shake_strength"] > 1.0)
+    dream = apply_style({}, "dream")["effects"]
+    check("dream: gold pop text, a strong glow, nothing that shakes",
+          (dream["text_color"], dream["text_animation"]) == ("gold", "pop")
+          and dream["glow"] >= 0.8 and dream["kinetic_text"] is True
+          and not dream.get("impact_shake") and dream["wobble"] is False)
 
 
 def three_kill_clip() -> list[Highlight]:
