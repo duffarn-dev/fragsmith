@@ -105,8 +105,8 @@ kill_zoom_factor = 1.7   # how far in (1.7 = 70%)
 kill_tilt = true         # dutch tilt on the film's climax kill (combined with kill_zoom)
 kill_tilt_degrees = 22.0 # clamped automatically so the zoom covers the black corners
 intro_hook = true        # "cold open": 3 micro glimpses of top kills before the intro card
-intro_hook_style = "glimpses"  # "velocity": more kills, each fast in, slow-mo on the kill, fast out
-intro_hook_kills = 5     # how many kills the velocity cold open shows
+intro_hook_style = "glimpses"  # "velocity": kills in quick succession, the last in slow-mo, rewound, then at normal speed
+intro_hook_kills = 6     # how many kills the velocity cold open shows (2-8)
 slowmo_punch = true      # slow push-in zoom during slow-mo segments
 eased_ramps = true       # smooth speed transitions into/out of slow-mo
 smooth_slowmo = true     # optical flow interpolated slow-mo: smoother, but slower encode

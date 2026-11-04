@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from lib.branding import branding_files, card_background_filter, logo_overlay
-from lib.edit_engine import ENCODE_ARGS, LANDSCAPE, Frame, _climax_clip_id
+from lib.edit_engine import ENCODE_ARGS, LANDSCAPE, Frame, _atempo_chain, _climax_clip_id
 from lib.ffmpeg_util import (
     FONT_FILE,
     drawtext_escape,
@@ -313,14 +313,19 @@ def _stats_card(
     )
 
 
-# The velocity cold open ([effects].intro_hook_style = "velocity"): each kill
-# comes in fast, drops to slow-mo on the kill and goes out fast. Seconds of
-# source per part, around the kill
-VELOCITY_IN_S = 0.5
-VELOCITY_SLOW_S = 0.3   # centered on the kill
-VELOCITY_OUT_S = 0.3
-VELOCITY_FAST = 2.0
-VELOCITY_KILLS = 5      # [effects].intro_hook_kills
+# The velocity cold open ([effects].intro_hook_style = "velocity"), the
+# user's idea: 5-8 kills in quick succession; the last one drops into slow-mo,
+# rewinds from slow up to normal speed, and then plays at normal speed.
+# Seconds of source, around each kill
+VELOCITY_KILLS = 6          # [effects].intro_hook_kills, 2-8
+VELOCITY_RUN_PRE_S = 0.4    # a quick kill: this much before it ...
+VELOCITY_RUN_POST_S = 0.2   # ... and after, at VELOCITY_RUN_SPEED
+VELOCITY_RUN_SPEED = 1.5
+VELOCITY_SLOW_FROM_S = 0.1  # the last kill: slow-mo from just before it ...
+VELOCITY_SLOW_TO_S = 0.3    # ... to just after
+VELOCITY_REWIND_TO_S = 0.8  # the rewind goes back to this far before the kill
+VELOCITY_REWIND_SPEEDS = (0.5, 0.75, 1.0)  # slow up to normal, one third each
+VELOCITY_FINAL_POST_S = 0.8  # then at normal speed, to this far after it
 
 
 def velocity_slow_factor(src_fps: float) -> float:
@@ -331,9 +336,9 @@ def velocity_slow_factor(src_fps: float) -> float:
 
 def _velocity_picks(plan: EditPlan, candidates_by_id: dict, clips_dir: Path, n: int):
     """The n best kills across the clips, rising, the best last: (score,
-    clip, offset). Kills in one clip are at least one glimpse apart, so no
+    clip, offset). Kills in one clip are at least one window apart, so no
     moment shows twice."""
-    span = VELOCITY_IN_S + VELOCITY_SLOW_S + VELOCITY_OUT_S
+    span = VELOCITY_REWIND_TO_S + VELOCITY_FINAL_POST_S
     scored = []
     for d in plan.decisions:
         cand = candidates_by_id.get(d.clip_id)
@@ -353,44 +358,78 @@ def _velocity_picks(plan: EditPlan, candidates_by_id: dict, clips_dir: Path, n: 
     return sorted(picks, key=lambda p: p[0])
 
 
-def _atempo(speed: float) -> str:
-    """atempo for any speed: one filter takes 0.5-2.0, so slower is a chain
-    whose product is exactly the speed (the sound stays as long as the picture)."""
-    steps = []
-    while speed < 0.5:
-        steps.append("atempo=0.5")
-        speed /= 0.5
-    steps.append(f"atempo={speed:.4f}")
-    return ",".join(steps)
-
-
-def _velocity_glimpse(clip: Path, offset: float, out: Path, log_path: Path, frame: Frame) -> None:
-    """Fast in, slow on the kill, fast out: three trims of one window, each
-    with its own speed, joined. The slow part uses the clip's real frames
-    (velocity_slow_factor)."""
-    slow = velocity_slow_factor(probe_fps(clip))
-    start = max(0.0, offset - VELOCITY_SLOW_S / 2 - VELOCITY_IN_S)
-    a = offset - VELOCITY_SLOW_S / 2 - start  # where the slow part starts
-    b = a + VELOCITY_SLOW_S
-    c = b + VELOCITY_OUT_S
-    parts = [(0.0, a, VELOCITY_FAST, _atempo(VELOCITY_FAST)), (a, b, slow, _atempo(slow)),
-             (b, c, VELOCITY_FAST, _atempo(VELOCITY_FAST))]
-    chains = [f"[0:v]{frame.normalize()},split=3[s0][s1][s2]", "[0:a]asplit=3[a0][a1][a2]"]
-    for i, (t0, t1, speed, atempo) in enumerate(parts):
-        chains.append(f"[s{i}]trim={t0:.3f}:{t1:.3f},setpts=(PTS-STARTPTS)/{speed}[v{i}]")
-        chains.append(f"[a{i}]atrim={t0:.3f}:{t1:.3f},asetpts=PTS-STARTPTS,{atempo}[b{i}]")
-    chains.append("[v0][b0][v1][b1][v2][b2]concat=n=3:v=1:a=1[vc][ac]")
-    chains.append("[vc]fade=t=in:st=0:d=0.05:color=white[vout]")
+def _velocity_quick(clip: Path, offset: float, out: Path, log_path: Path, frame: Frame) -> None:
+    """One of the quick kills: a short window around it, a bit fast."""
+    start = max(0.0, offset - VELOCITY_RUN_PRE_S)
+    end = offset + VELOCITY_RUN_POST_S
     run_ffmpeg(
         [
-            "-ss", f"{start:.3f}", "-t", f"{c + 0.05:.3f}", "-i", str(clip),
+            "-ss", f"{start:.3f}", "-t", f"{end - start:.3f}", "-i", str(clip),
+            "-vf", f"{frame.normalize()},setpts=(PTS-STARTPTS)/{VELOCITY_RUN_SPEED},"
+                   "fade=t=in:st=0:d=0.04:color=white",
+            "-af", f"asetpts=PTS-STARTPTS,{_atempo_chain(VELOCITY_RUN_SPEED)}",
+            *ENCODE_ARGS,
+            str(out),
+        ],
+        log_path,
+        f"step 7: velocity cold open ({out.stem})",
+    )
+
+
+def _velocity_last(clip: Path, offset: float, out: Path, log_path: Path, frame: Frame) -> None:
+    """The last kill: it comes in like the quick ones, drops into slow-mo on
+    the kill, rewinds from slow up to normal speed to before the kill, and
+    then plays at normal speed. The rewind is silent, like the replay's."""
+    src_fps = probe_fps(clip)
+    slow = velocity_slow_factor(src_fps)
+    start = max(0.0, offset - max(VELOCITY_REWIND_TO_S, VELOCITY_RUN_PRE_S))
+    t = offset - start  # the kill, from the window's start
+    run_from = max(0.0, t - VELOCITY_RUN_PRE_S)
+    slow_from, slow_to = max(run_from, t - VELOCITY_SLOW_FROM_S), t + VELOCITY_SLOW_TO_S
+    rew_from = max(0.0, t - VELOCITY_REWIND_TO_S)
+    final_to = t + VELOCITY_FINAL_POST_S
+    # (source start, end, speed) in play order; the rewind goes from the end
+    # of the slow-mo back to rew_from, slow first: thirds, last third first
+    third = (slow_to - rew_from) / 3
+    rewind = [(slow_to - (i + 1) * third, slow_to - i * third, s)
+              for i, s in enumerate(VELOCITY_REWIND_SPEEDS)]
+    forward = [(run_from, slow_from, VELOCITY_RUN_SPEED), (slow_from, slow_to, slow)]
+    n_v = len(forward) + len(rewind) + 1
+    chains = [f"[0:v]{frame.normalize()},split={n_v}" + "".join(f"[s{i}]" for i in range(n_v)),
+              "[0:a]asplit=3[a0][a1][a2]"]
+    for i, (a, b, speed) in enumerate(forward):
+        chains.append(f"[s{i}]trim={a:.3f}:{b:.3f},setpts=(PTS-STARTPTS)/{speed}[v{i}]")
+        chains.append(f"[a{i}]atrim={a:.3f}:{b:.3f},asetpts=PTS-STARTPTS,"
+                      f"{_atempo_chain(speed)}[b{i}]")
+    rew_labels = []
+    for j, (a, b, speed) in enumerate(rewind):
+        i = len(forward) + j
+        # only the frames this speed shows: reverse holds them all in memory
+        keep = min(src_fps, 60.0 / speed)
+        chains.append(f"[s{i}]trim={a:.3f}:{b:.3f},setpts=PTS-STARTPTS,fps={keep:.3f},"
+                      f"reverse,setpts=PTS/{speed}[r{j}]")
+        rew_labels.append(f"[r{j}]")
+    rew_s = sum((b - a) / s for a, b, s in rewind)
+    chains.append("".join(rew_labels) + f"concat=n={len(rew_labels)}:v=1:a=0,fps=60[vr]")
+    chains.append(f"aevalsrc=0|0:s=48000:d={rew_s:.3f},"
+                  "aformat=sample_fmts=fltp:channel_layouts=stereo[br]")
+    last = n_v - 1
+    chains.append(f"[s{last}]trim={rew_from:.3f}:{final_to:.3f},setpts=PTS-STARTPTS[vf]")
+    chains.append(f"[a2]atrim={rew_from:.3f}:{final_to:.3f},asetpts=PTS-STARTPTS[bf]")
+    for lbl in ("b0", "b1", "bf"):
+        chains.append(f"[{lbl}]aformat=sample_fmts=fltp:channel_layouts=stereo[{lbl}x]")
+    chains.append("[v0][b0x][v1][b1x][vr][br][vf][bfx]concat=n=4:v=1:a=1[vc][ac]")
+    chains.append("[vc]fade=t=in:st=0:d=0.04:color=white[vout]")
+    run_ffmpeg(
+        [
+            "-ss", f"{start:.3f}", "-t", f"{final_to + 0.05:.3f}", "-i", str(clip),
             "-filter_complex", ";".join(chains),
             "-map", "[vout]", "-map", "[ac]",
             *ENCODE_ARGS,
             str(out),
         ],
         log_path,
-        f"step 7: velocity cold open ({out.stem})",
+        f"step 7: velocity cold open, the last kill ({out.stem})",
     )
 
 
@@ -404,8 +443,9 @@ def build_intro_hook(
     frame: Frame = LANDSCAPE,
 ) -> list[Path]:
     """Cold open: up to 3 micro glimpses (0.25 s) of the top kills, or with
-    intro_hook_style = "velocity" up to intro_hook_kills of them, each fast
-    in, slow on the kill and fast out (_velocity_glimpse). Cut
+    intro_hook_style = "velocity" intro_hook_kills of them in quick
+    succession, the last one into slow-mo, rewound and played at normal
+    speed (_velocity_quick, _velocity_last). Cut
     straight from the raw clips around the KillMark offsets, placed before
     the intro card. Order: rising hype, best glimpse last, right before
     the title.
@@ -421,11 +461,13 @@ def build_intro_hook(
         return []
 
     if str(fx.get("intro_hook_style", "glimpses")).lower() == "velocity":
-        n = max(1, int(fx.get("intro_hook_kills", VELOCITY_KILLS)))
+        n = min(8, max(2, int(fx.get("intro_hook_kills", VELOCITY_KILLS))))
+        picks = _velocity_picks(plan, candidates_by_id, clips_dir, n)
         glimpses = []
-        for i, (_, clip, offset) in enumerate(_velocity_picks(plan, candidates_by_id, clips_dir, n)):
+        for i, (_, clip, offset) in enumerate(picks):
             out = work / f"00_hook_{i}.mp4"
-            _velocity_glimpse(clip, offset, out, log_path, frame)
+            build = _velocity_last if i + 1 == len(picks) else _velocity_quick
+            build(clip, offset, out, log_path, frame)
             glimpses.append(out)
         return glimpses
 
