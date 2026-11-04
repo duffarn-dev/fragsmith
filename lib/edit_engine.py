@@ -1079,6 +1079,27 @@ def raw_mb_per_min(fps: int) -> float:
     return _per_fps(RAW_MB_PER_MIN, fps)
 
 
+def _snap_end(
+    desired_end: float, beats: dict, tolerance: float, into_climax: bool
+) -> float | None:
+    """Where a segment ends: the nearest beat before desired_end (trimming
+    only). The cut into the climax takes the drop instead when it's in
+    reach (beats["drop_cut_s"], set by drop sync). The drop often hits
+    between two beats, and every cut lands on the same phase of the beat
+    grid, so with only beats to snap to the climax can never start on it."""
+    drop = beats.get("drop_cut_s") if into_climax else None
+    if drop is not None and desired_end - tolerance <= drop <= desired_end:
+        return drop
+    return nearest_beat_before(desired_end, beats, tolerance)
+
+
+def _before_climax(rendered: list, target_id: str | None) -> str | None:
+    """The clip whose end is the cut into the climax."""
+    ids = [d.clip_id for d in rendered]
+    i = ids.index(target_id) if target_id in ids else 0
+    return ids[i - 1] if i > 0 else None
+
+
 def _simulate_timeline(
     plan: EditPlan,
     candidates_by_id: dict,
@@ -1106,6 +1127,7 @@ def _simulate_timeline(
     framed = set(trans_in) | {
         prev.clip_id for prev, d in zip(rendered, rendered[1:]) if d.clip_id in trans_in
     }
+    cut_into_climax = _before_climax(rendered, target_id)
 
     climax_start: float | None = None
     pos = timeline_start
@@ -1121,7 +1143,7 @@ def _simulate_timeline(
         cand = candidates_by_id.get(d.clip_id)
         tp = _timing_plan(d, cand, duration, fx)
         desired_end = pos + tp["out_duration"]
-        snapped = nearest_beat_before(desired_end, beats, tolerance)
+        snapped = _snap_end(desired_end, beats, tolerance, d.clip_id == cut_into_climax)
         end = (
             snapped
             if snapped is not None and snapped - pos >= 2.0
@@ -1280,27 +1302,30 @@ def plan_drop_sync(
     for drop in drops:  # strongest first
         drop_t = float(drop["time_s"])
         r = drop_t - c0
+        # the cut into the climax can land on the drop itself, also when it
+        # hits between two beats (_snap_end)
+        b_drop = {**beats, "drop_cut_s": drop_t}
 
         def intro_err(intro: float) -> float | None:
-            c = climax_start(beats, intro)
+            c = climax_start(b_drop, intro)
             return None if c is None else drop_t - c
 
         def offset_err(off: float) -> float | None:
-            c = climax_start(shift_beats(beats, off), base_intro)
+            c = climax_start(shift_beats(b_drop, off), base_intro)
             return None if c is None else (drop_t - off) - c
 
         # Lever 1: intro adjustment, the drop is close to the natural climax
         if lo - base_intro - tolerance <= r <= hi - base_intro + tolerance:
             intro = _solve_drop(intro_err, min(hi, max(lo, base_intro + r)), lo, hi)
-            c = None if intro is None else climax_start(beats, intro)
+            c = None if intro is None else climax_start(b_drop, intro)
             if c is not None and abs(c - drop_t) <= DROP_MAX_ERROR_S:
-                return result(beats, intro, 0.0, "intro", drop_t, c - drop_t)
+                return result(b_drop, intro, 0.0, "intro", drop_t, c - drop_t)
 
         # Lever 2: music offset, the drop is far INTO the track
         if r > 0:
             off = _solve_drop(offset_err, r, lo=0.0)
             if off is not None and off > 0:
-                shifted = shift_beats(beats, off)
+                shifted = shift_beats(b_drop, off)
                 c = climax_start(shifted, base_intro)
                 # the rest of the track must cover the whole film, or the
                 # music stops before the outro (seen: 1:45 of music, 1:54 film)
@@ -1396,6 +1421,7 @@ def build_segments(
         for prev, d in zip(rendered, rendered[1:]) if d.clip_id in trans_in
     }
     prev_tail: Path | None = None
+    cut_into_climax = _before_climax(rendered, _climax_clip_id(plan))
 
     for decision in sorted(plan.decisions, key=lambda d: d.order):
         clip_path = clips_dir / f"{decision.clip_id}.mp4"
@@ -1432,9 +1458,12 @@ def build_segments(
                 t += freeze["dur"]
             return t
 
-        # Beat alignment: snap the segment END to the nearest beat (trimming only)
+        # Beat alignment: snap the segment END to the nearest beat (trimming
+        # only), or the cut into the climax to the drop (_snap_end)
         desired_end = timeline_pos + out_duration
-        snapped = nearest_beat_before(desired_end, beats, tolerance)
+        snapped = _snap_end(
+            desired_end, beats, tolerance, decision.clip_id == cut_into_climax
+        )
         target_duration = out_duration
         trimmed_ms = None
         if snapped is not None and snapped - timeline_pos >= 2.0:

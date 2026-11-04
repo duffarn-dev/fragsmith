@@ -80,7 +80,7 @@ Kinetic text is drawn with Pillow (in `requirements.txt`). Without Pillow, the t
 |---|---|---|
 | Cold open | `[effects].intro_hook` | 3 micro-glimpses of the top kills before the intro card |
 | Instant replay | `[effects].instant_replay` | The climax kill rewinds and replays in slow-mo from the victim's POV. *Requires an extra render pass* |
-| Drop sync | `[editing].drop_sync` | Places the climax clip on the music's bass drop, within 100 ms. If the cuts can't land on the strongest drop, it takes the next one they can. Tracks without a clear drop, or with none in reach, fall back to climax-at-the-end |
+| Drop sync | `[editing].drop_sync` | Places the climax clip on the music's bass drop, within 100 ms. The drop is the moment it hits, which is often between two beats: the cut into the climax lands there, and so do the gap and the boom. If the cuts can't land on the strongest drop, it takes the next one they can. Tracks without a clear drop, or with none in reach, fall back to climax-at-the-end |
 | Stats outro | `[editing].stats_outro` | Outro card with kills, K/D, HS% and best clutch instead of plain text |
 | Thumbnail | `[editing].thumbnail` | `thumbnail.jpg` next to `final.mp4`: 1280×720 and under 2 MB, as YouTube asks. The frame is from the climax clip just before the last kill, with the film's grade and LUT, a slight push-in, the climax label (the overlay text, or ACE / 4K / 1vX) and your `[branding]` logo. If it fails, the film is still made, and a flag says why |
 
