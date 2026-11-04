@@ -796,6 +796,26 @@ REPLAY_REWIND_S = 1.0    # length of the rewind snippet in the output
 REPLAY_PRE_S = 1.8       # source seconds BEFORE the kill in the replay
 REPLAY_POST_S = 1.2      # source seconds AFTER the kill
 REPLAY_FACTOR = 0.45     # playback speed in the replay
+# Bullet time ([effects].replay_style = "bullet_time", the matrix style): the
+# replay is a camera circling the player once around the climax kill,
+# rendered at 480 fps and played at 0.25x. The user's "Matrix" idea; these
+# are the numbers of the spike they liked (Wall-E on mirage, 2026-11-04)
+BT_BEFORE_S = 1.73      # the bullet-time clip starts this long before the kill ...
+BT_AFTER_S = 0.61       # ... and ends this long after it
+BT_ORBIT_FROM_S = 1.27  # the camera circles from this long before the kill ...
+BT_ORBIT_TO_S = 0.08    # ... to just after it
+BT_FPS = 480
+BT_FACTOR = 0.25        # 120 real frames a second at 480 fps
+BT_PRE_S = 1.4          # the replay shows from just before the circling ...
+BT_POST_S = 0.3         # ... to just after the kill
+
+
+def bullet_time_on(cfg: dict) -> bool:
+    fx = cfg.get("effects", {})
+    return (
+        fx.get("enabled", True) and fx.get("instant_replay", False)
+        and str(fx.get("replay_style", "victim")).lower() == "bullet_time"
+    )
 
 
 def pick_replay_clip(plan: EditPlan, candidates_by_id: dict, cfg: dict):
@@ -823,14 +843,37 @@ def pick_replay_clip(plan: EditPlan, candidates_by_id: dict, cfg: dict):
         if "replay" in target.effects_off:
             return None
         cand = candidates_by_id.get(target.clip_id)
+        # bullet time always goes on the climax kill (the user's choice)
         if cand is None or (
-            cand.kill_count < 3 and not (cand.clutch_vs and cand.clutch_vs >= 2)
+            not bullet_time_on(cfg)
+            and cand.kill_count < 3 and not (cand.clutch_vs and cand.clutch_vs >= 2)
         ):
             return None  # a replay on a weak clip is worse than no replay
     kills = getattr(candidates_by_id.get(target.clip_id), "kills", None)
     if not kills:
         return None
     return target.clip_id, kills[-1]
+
+
+def _replay_plan(clips_dir: Path, clip_id: str, clip_path: Path, kill_offset_s: float,
+                 cfg: dict) -> dict:
+    """What the replay of a clip plays: the source, where its kill is, the
+    window around it, the speed and the badge. The simulation and the build
+    both use it, so they agree. note: why it isn't what the style asked for."""
+    bt = clips_dir / f"{clip_id}_bt.mp4"
+    note = None
+    if bullet_time_on(cfg):
+        if bt.exists():
+            return {"src": bt, "kill_s": BT_BEFORE_S, "pre": BT_PRE_S, "post": BT_POST_S,
+                    "factor": BT_FACTOR, "badge": None, "note": None}
+        note = f"{clip_id}: bullet-time clip (_bt) missing — a normal replay instead."
+    alt = clips_dir / f"{clip_id}_alt.mp4"
+    if not alt.exists():
+        note = note or (f"{clip_id}: victim-POV clip (_alt) missing — "
+                        f"replay is built from the same POV instead.")
+    return {"src": alt if alt.exists() else clip_path, "kill_s": kill_offset_s,
+            "pre": REPLAY_PRE_S, "post": REPLAY_POST_S, "factor": REPLAY_FACTOR,
+            "badge": "REPLAY", "note": note}
 
 
 def _build_replay_segment(
@@ -844,17 +887,22 @@ def _build_replay_segment(
     log_path: Path,
     label: str,
     frame: Frame = LANDSCAPE,
+    pre_s: float = REPLAY_PRE_S,
+    post_s: float = REPLAY_POST_S,
+    factor: float = REPLAY_FACTOR,
+    badge: str | None = "REPLAY",
 ) -> float:
     """Build rewind + slow-mo replay as a separate segment.
 
     main_seg: the finished climax segment (the rewind runs from the output
     end back to the kill). replay_src: the victim-POV clip (_alt) or the
     same POV as fallback; same tick range, so kill_offset_s applies to both.
+    Bullet time passes its own clip, window, speed and no badge (_replay_plan).
     Returns the actual duration.
     """
     src_dur = probe_duration(replay_src)
-    w0 = max(0.0, kill_offset_s - REPLAY_PRE_S)
-    w1 = min(src_dur, kill_offset_s + REPLAY_POST_S)
+    w0 = max(0.0, kill_offset_s - pre_s)
+    w1 = min(src_dur, kill_offset_s + post_s)
     rew_from = max(0.0, kill_t_out - 0.4)
     rew_window = max(0.3, seg_duration - rew_from)
     rew_speed = rew_window / REPLAY_REWIND_S
@@ -866,7 +914,7 @@ def _build_replay_segment(
     )
     replay_v = (
         f"[1:v]trim=start={w0:.3f}:end={w1:.3f},"
-        f"setpts=(PTS-STARTPTS)/{REPLAY_FACTOR:.3f}"
+        f"setpts=(PTS-STARTPTS)/{factor:.3f}"
     )
     if smooth:
         replay_v += ",minterpolate=fps=60:mi_mode=mci"
@@ -877,11 +925,12 @@ def _build_replay_segment(
     # REPLAY badge: top center (the killfeed lives in the top right), pulsing;
     # in portrait below the app bar
     badge_y = round(frame.h * 0.12) if frame.portrait else 70
-    replay_v += (
-        f",drawtext=fontfile='{FONT_FILE}':text='REPLAY':expansion=none"
-        f":fontsize=72:fontcolor=white:borderw=5:bordercolor=black"
-        f":x=(w-text_w)/2:y={badge_y}:alpha='0.6+0.4*abs(sin(t*3))'"
-    )
+    if badge:
+        replay_v += (
+            f",drawtext=fontfile='{FONT_FILE}':text='{badge}':expansion=none"
+            f":fontsize=72:fontcolor=white:borderw=5:bordercolor=black"
+            f":x=(w-text_w)/2:y={badge_y}:alpha='0.6+0.4*abs(sin(t*3))'"
+        )
 
     chains = [
         # rewind: from just before the kill to the segment end, reversed at high speed
@@ -892,7 +941,7 @@ def _build_replay_segment(
         f"aformat=sample_fmts=fltp:channel_layouts=stereo[ra]",
         f"{replay_v}[pv]",
         f"[1:a]atrim=start={w0:.3f}:end={w1:.3f},asetpts=PTS-STARTPTS,"
-        f"{_atempo_chain(REPLAY_FACTOR)}[pa]",
+        f"{_atempo_chain(factor)}[pa]",
         "[rv][ra][pv][pa]concat=n=2:v=1:a=1[v][a]",
     ]
     run_ffmpeg(
@@ -1214,15 +1263,13 @@ def _simulate_timeline(
         pos = pos + round((end - pos) * 60) / 60 if d.clip_id in framed else end
         # the replay segment right after its clip pushes the timeline too
         if replay_pick and replay_pick[0] == d.clip_id:
-            src = clips_dir / f"{d.clip_id}_alt.mp4"
-            if not src.exists():
-                src = clip
-            key = f"replay_src::{src.name}"
+            rp = _replay_plan(clips_dir, d.clip_id, clip, replay_pick[1].offset_s, cfg)
+            key = f"replay_src::{rp['src'].name}"
             if key not in dur_cache:
-                dur_cache[key] = probe_duration(src)
-            w0 = max(0.0, replay_pick[1].offset_s - REPLAY_PRE_S)
-            w1 = min(dur_cache[key], replay_pick[1].offset_s + REPLAY_POST_S)
-            pos += REPLAY_REWIND_S + (w1 - w0) / REPLAY_FACTOR
+                dur_cache[key] = probe_duration(rp["src"])
+            w0 = max(0.0, rp["kill_s"] - rp["pre"])
+            w1 = min(dur_cache[key], rp["kill_s"] + rp["post"])
+            pos += REPLAY_REWIND_S + (w1 - w0) / rp["factor"]
     return climax_start, pos
 
 
@@ -1742,28 +1789,24 @@ def build_segments(
         # rewind + slow-mo replay right after the climax segment
         if replay_pick and replay_pick[0] == decision.clip_id:
             replay_kill = replay_pick[1]
-            alt_path = clips_dir / f"{decision.clip_id}_alt.mp4"
-            replay_src = alt_path
-            if not alt_path.exists():
-                flags.append(
-                    f"{decision.clip_id}: victim-POV clip (_alt) missing — "
-                    f"replay is built from the same POV instead."
-                )
-                replay_src = clip_path
+            rp = _replay_plan(clips_dir, decision.clip_id, clip_path, replay_kill.offset_s, cfg)
+            if rp["note"]:
+                flags.append(rp["note"])
             replay_out = segments_dir / (
                 f"{decision.order:02d}b_{decision.clip_id}_replay.mp4"
             )
             # (a replay clip never has a transition out, but may have one in)
             replay_dur = _build_replay_segment(
-                out_path, replay_src,
-                replay_kill.offset_s, _out_time(replay_kill.offset_s) + d_in / 2,
+                out_path, rp["src"],
+                rp["kill_s"], _out_time(replay_kill.offset_s) + d_in / 2,
                 seg_file_s, fx, replay_out, log_path,
                 f"step 6: replay ({decision.clip_id})",
-                frame=frame,
+                frame=frame, pre_s=rp["pre"], post_s=rp["post"],
+                factor=rp["factor"], badge=rp["badge"],
             )
             # impact SFX when the kill lands in the replay (after the rewind)
             kill_in_replay = REPLAY_REWIND_S + (
-                min(replay_kill.offset_s, REPLAY_PRE_S) / REPLAY_FACTOR
+                min(rp["kill_s"], rp["pre"]) / rp["factor"]
             )
             cut_log.append(
                 {

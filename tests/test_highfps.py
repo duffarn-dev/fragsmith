@@ -118,10 +118,10 @@ def build_job(high: int = 120) -> dict:
 
 
 def test_build_render_job() -> None:
-    print("build_render_job (schema 1.4):")
+    print("build_render_job (schema 1.5):")
     job = build_job()
     by_id = {c["clip_id"]: c for c in job["clips"]}
-    check("schema 1.4", job["schema_version"] == "1.4")
+    check("schema 1.5", job["schema_version"] == "1.5")
     check("slow-mo clip gets framerate", by_id["a"].get("framerate") == 120)
     check("replay climax gets framerate", by_id["b"].get("framerate") == 120)
     check("normal clip does NOT get framerate", "framerate" not in by_id["c"])

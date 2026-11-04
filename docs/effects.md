@@ -12,7 +12,7 @@ Instead of setting every switch below, pick a style:
 
 ```toml
 [style]
-preset = "hype"   # custom | clean | hype | cinematic | neon | rage | dream
+preset = "hype"   # custom | clean | hype | cinematic | neon | rage | dream | matrix
 ```
 
 | Style | Looks like |
@@ -24,6 +24,7 @@ preset = "hype"   # custom | clean | hype | cinematic | neon | rage | dream
 | `neon` | `hype`'s cut with the velocity cold open, cyan glitch text, a glow, the impact shake instead of the wobble, glitch and whip transitions, no grain |
 | `rage` | `hype`'s cut, harder: a velocity cold open of 6 kills, red text, a strong impact shake, a steeper tilt, only whip transitions |
 | `dream` | `cinematic`'s cut with a strong glow and gold text that pops in. Still nothing that shakes |
+| `matrix` | `hype`'s cut with bullet time on the climax kill (the camera circles you once at 0.25×, instead of the victim's replay), the climax clip in third person until the fight, and green glitch text |
 
 The last three are style packs: a base style's cut with a look of its own. A pack is a few lines in `lib/styles.py` on top of `hype` or `cinematic`.
 
@@ -104,6 +105,14 @@ Your own look on every film, set in `[branding]`. Paths are relative to the Frag
 | Logo | `[branding].logo`, `logo_position`, `logo_size`, `logo_opacity` | A png (use transparency) in a corner of the whole film: cold open, cards, clips and replay. `logo_size` is its width as a share of the frame (0.12 = 12 %). `bottom-right` is the default; `top-right` covers the killfeed |
 
 The logo costs one extra encode of the film (about 12 s for a one-minute film). Without a logo, nothing changes.
+
+## Bullet time and the cinematic approach (the `matrix` style)
+
+Two cameras that leave the player's eyes, made with HLAE through the clip's commands (job schema 1.4/1.5). They need the `worker.py` from this version on the render PC.
+
+- **Bullet time** (`[effects].replay_style = "bullet_time"`, with `instant_replay`): the replay of the climax kill is a camera circling you once. The camera path is made from your positions in the demo: 120 units out, at eye height, from 1.27 s before the kill to just after it. It's rendered at 480 fps over 2.3 s and played at 0.25×, so the circle takes about 5 s at 120 real frames a second, with the bullets in slow motion. It goes on the climax kill in every film, and replaces the victim's-eyes replay. That extra render is 2.3 s at 480 fps, about as much as the victim's angle it replaces.
+- **The cinematic approach** (`[render].cinematic_approach = "climax"`): the climax clip is in third person (a chase cam) from its start until 1.5 s before its first kill, then in your eyes for the fight. Nothing extra renders.
+- If the demo can't give your positions, there's no bullet time, and the replay is the normal one.
 
 ## Teaser
 

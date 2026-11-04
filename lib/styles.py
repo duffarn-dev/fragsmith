@@ -163,6 +163,17 @@ STYLES["rage"] = _on_top_of("hype", effects={
     "kill_tilt_degrees": 26.0,
     "transitions": ["whip"],
 })
+# The user's Matrix idea: bullet time on the climax kill, and the climax clip
+# filmed in third person until the fight
+STYLES["matrix"] = _on_top_of("hype", effects={
+    "replay_style": "bullet_time",
+    "instant_replay": True,
+    "text_color": "lime",
+    "text_animation": "glitch",
+    "glow": 0.3,
+    "wobble": False,
+    "transitions": ["glitch", "zoom"],
+}, render={"cinematic_approach": "climax"})
 STYLES["dream"] = _on_top_of("cinematic", effects={
     "glow": 0.8,
     "kinetic_text": True,
