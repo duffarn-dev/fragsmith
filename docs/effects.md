@@ -21,8 +21,8 @@ preset = "hype"   # custom | clean | hype | cinematic | neon | rage | dream
 | `clean` | Grade, vignette and beat cuts. No zooms, flashes, counters, replay or sound effects, and a lower intensity |
 | `hype` | Everything on and stronger: motion blur on the climax, whip, zoom and glitch transitions, beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, kinetic text and counter, impact split, freeze, replay, louder impacts, and a gap and a boom on the drop |
 | `cinematic` | Letterbox, film grain, motion blur on the climax, zoom transitions, slow-mo push-ins, a gentle kill zoom, a long freeze, the replay, and a gap before the drop. Nothing that shakes or flashes |
-| `neon` | `hype`'s cut with cyan glitch text, a glow, the impact shake instead of the wobble, glitch and whip transitions, no grain |
-| `rage` | `hype`'s cut, harder: red text, a strong impact shake, a steeper tilt, only whip transitions |
+| `neon` | `hype`'s cut with the velocity cold open, cyan glitch text, a glow, the impact shake instead of the wobble, glitch and whip transitions, no grain |
+| `rage` | `hype`'s cut, harder: a velocity cold open of 6 kills, red text, a strong impact shake, a steeper tilt, only whip transitions |
 | `dream` | `cinematic`'s cut with a strong glow and gold text that pops in. Still nothing that shakes |
 
 The last three are style packs: a base style's cut with a look of its own. A pack is a few lines in `lib/styles.py` on top of `hype` or `cinematic`.
@@ -87,7 +87,7 @@ Kinetic text is drawn with Pillow (in `requirements.txt`). Without Pillow, the t
 
 | Effect | Config | What it does |
 |---|---|---|
-| Cold open | `[effects].intro_hook` | 3 micro-glimpses of the top kills before the intro card |
+| Cold open | `[effects].intro_hook` | 3 micro-glimpses of the top kills before the intro card. With `intro_hook_style = "velocity"`, the best `intro_hook_kills` (5) kills instead, each about a second: in at 2×, slow-mo on the kill, out at 2×. The slow-mo is 0.5×, or 0.25× from clips rendered at 240 fps or more (the motion blur clips), so it's always real frames. Rising, the best kill last |
 | Instant replay | `[effects].instant_replay` | The climax kill rewinds and replays in slow-mo from the victim's POV. *Requires an extra render pass* |
 | Drop sync | `[editing].drop_sync` | Places the climax clip on the music's bass drop, within 100 ms. The drop is the moment it hits, which is often between two beats: the cut into the climax lands there, and so do the gap and the boom. If the cuts can't land on the strongest drop, it takes the next one they can. Tracks without a clear drop, or with none in reach, fall back to climax-at-the-end |
 | Stats outro | `[editing].stats_outro` | Outro card with kills, K/D, HS% and best clutch instead of plain text |
