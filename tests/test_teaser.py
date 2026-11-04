@@ -2,8 +2,9 @@
 
 Covers: the cut lengths (they fill the time, speed up, stay within limits),
 which kills it uses (the climax clip's last as the hero, close kills in one
-clip as one cut, nothing twice), and a rendered teaser (its parts, the drop
-about in the middle, the music's drop where the hero kill is).
+clip as one cut, nothing twice; from several runs, the best climax), and
+rendered teasers (their parts, the drop about in the middle, the music's
+drop where the hero kill is, more runs making a longer one).
 
 Run: python tests/test_teaser.py
 """
@@ -86,7 +87,7 @@ def test_lengths() -> None:
 def test_kills(tmp: Path) -> None:
     print("the kills it uses")
     clips, cands, plan = fixture(tmp)
-    hero, others = _kills(plan, cands, clips)
+    hero, others = _kills([(plan, cands, clips)])
     check("the hero is the climax clip's last kill", hero[1].stem == "c" and hero[2] == 5.0)
     check("a kill just before the hero is in its rewind, not a cut of its own",
           all(not (c.stem == "c" and o == 3.0) for _, c, o in others))
@@ -98,6 +99,15 @@ def test_kills(tmp: Path) -> None:
 def test_render(tmp: Path) -> None:
     print("a rendered teaser")
     clips, cands, plan = fixture(tmp)
+    wav = music(tmp)
+    cfg = {"editing": {"sfx_dir": str(tmp / "sfx")}, "branding": {}}
+    path, info = build_teaser([(plan, cands, clips)], wav, 40.0, tmp, cfg, tmp / "log.txt")
+    check_render(path, info, kills=5)
+    return info
+
+
+def music(tmp: Path) -> Path:
+    """A quiet track that jumps 20 dB at 40 s: its drop."""
     # a quiet track that jumps 20 dB at 40 s: its drop
     sr = 48000
     t = np.arange(int(60 * sr)) / sr
@@ -108,14 +118,16 @@ def test_render(tmp: Path) -> None:
         w.setsampwidth(2)
         w.setframerate(sr)
         w.writeframes((music * 32767).astype(np.int16).tobytes())
-    cfg = {"editing": {"sfx_dir": str(tmp / "sfx")}, "branding": {}}
-    path, info = build_teaser(plan, cands, clips, wav, 40.0, tmp, cfg, tmp / "log.txt")
-    check("teaser.mp4 next to the film", path == tmp / "teaser.mp4" and path.exists())
+    return wav
+
+
+def check_render(path: Path, info: dict, kills: int) -> None:
+    check("teaser.mp4 in the folder", path.name == "teaser.mp4" and path.exists())
     check("as long as it says", abs(probe_duration(path) - info["seconds"]) <= 0.1,
           f"{probe_duration(path):.2f} vs {info['seconds']}")
     check("the drop about in the middle", abs(info["drop_s"] - info["seconds"] / 2) <= 1.5,
           f"drop at {info['drop_s']} of {info['seconds']} s")
-    check("every kill moment once: 4 cuts and the hero", info["kills"] == 5, str(info["kills"]))
+    check(f"every kill moment once: {kills - 1} cuts and the hero", info["kills"] == kills, str(info["kills"]))
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-ac", "1", "-ar", "8000",
                           "-f", "f32le", "-"], capture_output=True, check=True).stdout
     y = np.frombuffer(raw, dtype=np.float32)
@@ -129,12 +141,32 @@ def test_render(tmp: Path) -> None:
           f"{before:.1f} dB before, {after:.1f} dB after")
 
 
+def test_many(tmp: Path, one_run: dict) -> None:
+    print("best of the week: several runs")
+    (tmp / "r1").mkdir()
+    (tmp / "r2").mkdir()
+    c1, k1, p1 = fixture(tmp / "r1")
+    c2, k2, p2 = fixture(tmp / "r2")
+    k2["c"] = k2["c"].model_copy(update={"hype_score": 9.0})  # the better climax
+    hero, others = _kills([(p1, k1, c1), (p2, k2, c2)])
+    check("the hero is the best climax of all the runs", hero[1].parent.parent.name == "r2")
+    check("the other run's climax kill is one of the cuts",
+          any(c.parent.parent.name == "r1" and c.stem == "c" and o == 5.0 for _, c, o in others))
+    cfg = {"editing": {"sfx_dir": str(tmp / "sfx")}, "branding": {}}
+    path, info = build_teaser([(p1, k1, c1), (p2, k2, c2)], music(tmp), 40.0, tmp, cfg, tmp / "log.txt")
+    check_render(path, info, kills=10)
+    check("more runs, a longer teaser", info["seconds"] > one_run["seconds"] + 5,
+          f"{info['seconds']} s against {one_run['seconds']} s")
+
+
 if __name__ == "__main__":
     test_lengths()
     with tempfile.TemporaryDirectory() as t:
         test_kills(Path(t))
     with tempfile.TemporaryDirectory() as t:
-        test_render(Path(t))
+        one = test_render(Path(t))
+    with tempfile.TemporaryDirectory() as t:
+        test_many(Path(t), one)
     print()
     if FAILS:
         print(f"FAILED: {len(FAILS)}: {FAILS}")
