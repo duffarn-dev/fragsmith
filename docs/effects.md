@@ -87,7 +87,7 @@ Kinetic text is drawn with Pillow (in `requirements.txt`). Without Pillow, the t
 
 | Effect | Config | What it does |
 |---|---|---|
-| Cold open | `[effects].intro_hook` | 3 micro-glimpses of the top kills before the intro card. With `intro_hook_style = "velocity"`, the best `intro_hook_kills` (5) kills instead, each about a second: in at 2×, slow-mo on the kill, out at 2×. The slow-mo is 0.5×, or 0.25× from clips rendered at 240 fps or more (the motion blur clips), so it's always real frames. Rising, the best kill last |
+| Cold open | `[effects].intro_hook` | 3 micro-glimpses of the top kills before the intro card. With `intro_hook_style = "velocity"`, the best `intro_hook_kills` (6, from 2 to 8) kills in quick succession, rising, the best last. The last one drops into slow-mo on the kill, rewinds from slow up to normal speed to just before it, and plays at normal speed into the intro card. The slow-mo is 0.5×, or 0.25× from clips rendered at 240 fps or more (the motion blur clips), so it's always real frames. The rewind is silent, like the replay's |
 | Instant replay | `[effects].instant_replay` | The climax kill rewinds and replays in slow-mo from the victim's POV. *Requires an extra render pass* |
 | Drop sync | `[editing].drop_sync` | Places the climax clip on the music's bass drop, within 100 ms. The drop is the moment it hits, which is often between two beats: the cut into the climax lands there, and so do the gap and the boom. If the cuts can't land on the strongest drop, it takes the next one they can. Tracks without a clear drop, or with none in reach, fall back to climax-at-the-end |
 | Stats outro | `[editing].stats_outro` | Outro card with kills, K/D, HS% and best clutch instead of plain text |

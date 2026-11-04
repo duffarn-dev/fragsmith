@@ -1,9 +1,11 @@
 """Tests for the velocity cold open ([effects].intro_hook_style = "velocity").
 
-Covers: the slow-mo factor per source frame rate, the atempo chain, which
-kills are picked (the best, rising, the best last, no moment twice), and the
-rendered glimpses (their length, the slow middle, sound as long as the
-picture). The default glimpses are unchanged.
+Covers: the slow-mo factor per source frame rate, which kills are picked
+(the best, rising, the best last, no moment twice), and the rendered cold
+open: quick kills, then the last one in slow-mo, rewound from slow up to
+normal speed, and played at normal speed (their lengths, the speed and
+direction of each part, sound as long as the picture). The default glimpses
+are unchanged.
 
 Run: python tests/test_velocity_intro.py
 """
@@ -19,11 +21,14 @@ sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from lib.assemble import (  # noqa: E402
-    VELOCITY_FAST,
-    VELOCITY_IN_S,
-    VELOCITY_OUT_S,
-    VELOCITY_SLOW_S,
-    _atempo,
+    VELOCITY_FINAL_POST_S,
+    VELOCITY_REWIND_SPEEDS,
+    VELOCITY_REWIND_TO_S,
+    VELOCITY_RUN_POST_S,
+    VELOCITY_RUN_PRE_S,
+    VELOCITY_RUN_SPEED,
+    VELOCITY_SLOW_FROM_S,
+    VELOCITY_SLOW_TO_S,
     _velocity_picks,
     build_intro_hook,
     velocity_slow_factor,
@@ -41,13 +46,13 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 
 def make_clip(path: Path, seconds: float, rate: int) -> None:
-    """A white bar moving right at 100 px per second of source, on black
+    """A white bar moving right at 50 px per second of source, on black
     (overlay, not drawbox: drawbox works out its position once)."""
     subprocess.run(["ffmpeg", "-y", "-v", "error",
                     "-f", "lavfi", "-i", f"color=black:s=320x180:r={rate}:d={seconds}",
                     "-f", "lavfi", "-i", f"color=white:s=6x60:r={rate}:d={seconds}",
                     "-f", "lavfi", "-i", f"sine=f=440:d={seconds}",
-                    "-filter_complex", "[0:v][1:v]overlay=x='mod(t*100,310)':y=60[v]",
+                    "-filter_complex", "[0:v][1:v]overlay=x='t*50':y=60[v]",
                     "-map", "[v]", "-map", "2:a", "-c:v", "libx264", "-preset", "ultrafast",
                     "-c:a", "aac", "-shortest", str(path)], check=True)
 
@@ -69,7 +74,7 @@ def fixture(tmp: Path):
     make_clip(clips / "a.mp4", 5.0, 60)
     make_clip(clips / "b.mp4", 5.0, 240)  # a motion blur clip
     cands = {
-        "a": hl("a", 5.0, [km(1.5), km(1.9, hs=True), km(3.5)]),
+        "a": hl("a", 5.0, [km(1.5), km(1.9, hs=True), km(4.0)]),
         "b": hl("b", 8.0, [km(2.5, hs=True)]),
     }
     plan = EditPlan(demo_path="d.dem", music_track="m.mp3", intro_text="X", outro_text="GG",
@@ -102,9 +107,8 @@ def test_rules() -> None:
     check("240 and 480 fps: 0.25x, real frames", velocity_slow_factor(240) == 0.25
           and velocity_slow_factor(480) == 0.25)
     check("in between: as slow as the frames allow", abs(velocity_slow_factor(180) - 1 / 3) < 1e-9)
-    check("atempo: one filter in range", _atempo(2.0) == "atempo=2.0000" and _atempo(0.5) == "atempo=0.5000")
-    check("atempo: a chain whose product is the speed",
-          _atempo(0.25) == "atempo=0.5,atempo=0.5000" and _atempo(1 / 3) == "atempo=0.5,atempo=0.6667")
+    check("the rewind goes from slow up to normal", list(VELOCITY_REWIND_SPEEDS)
+          == sorted(VELOCITY_REWIND_SPEEDS) and VELOCITY_REWIND_SPEEDS[-1] == 1.0)
 
 
 def test_picks(tmp: Path) -> None:
@@ -116,33 +120,45 @@ def test_picks(tmp: Path) -> None:
           and picks[-1][1].stem == "b")
     a_offsets = sorted(o for _, c, o in picks if c.stem == "a")
     check("no moment twice: kills in one clip a glimpse apart",
-          all(y - x >= VELOCITY_IN_S + VELOCITY_SLOW_S + VELOCITY_OUT_S
+          all(y - x >= VELOCITY_REWIND_TO_S + VELOCITY_FINAL_POST_S
               for x, y in zip(a_offsets, a_offsets[1:])), str(a_offsets))
     check("the headshot beats the kill right before it", 1.9 in a_offsets and 1.5 not in a_offsets)
 
 
 def test_render(tmp: Path) -> None:
-    print("the glimpses")
+    print("the cold open")
     clips, cands, plan = fixture(tmp)
     log = tmp / "log.txt"
     fx = {"enabled": True, "intro_hook": True, "intro_hook_style": "velocity", "intro_hook_kills": 3}
     hooks = build_intro_hook(plan, cands, clips, tmp, {"effects": fx}, log)
-    check("one glimpse per pick", len(hooks) == 3, str(len(hooks)))
-    fast = (VELOCITY_IN_S + VELOCITY_OUT_S) / VELOCITY_FAST
-    want = {"a": fast + VELOCITY_SLOW_S / 0.5, "b": fast + VELOCITY_SLOW_S / 0.25}
-    by_clip = dict(zip(["a", "a", "b"], hooks))  # rising: the 240 fps headshot is last
-    for name, path in by_clip.items():
-        got = probe_duration(path)
-        check(f"{name}: about {want[name]:.2f} s", abs(got - want[name]) <= 0.08, f"{got:.3f} s")
-    b = hooks[-1]
-    # 100 px per source second: 200 px/s at 2x in, 25 px/s at 0.25x on the kill
-    fast_in, slow_mid = speed(b, 0.07, 0.22), speed(b, 0.45, 1.25)
-    check("in at 2x", abs(fast_in - 200) <= 30, f"{fast_in:.0f} px/s")
-    check("the kill at 0.25x", abs(slow_mid - 25) <= 6, f"{slow_mid:.0f} px/s")
+    check("one file per kill", len(hooks) == 3, str(len(hooks)))
+    quick = (VELOCITY_RUN_PRE_S + VELOCITY_RUN_POST_S) / VELOCITY_RUN_SPEED
+    check("the quick kills: short", all(abs(probe_duration(h) - quick) <= 0.05 for h in hooks[:-1]),
+          ", ".join(f"{probe_duration(h):.3f}" for h in hooks[:-1]))
+
+    # the last kill is b's, from 240 fps: slow-mo at 0.25x. The bar moves
+    # 50 px per source second, so its speed in the film is 50 x the speed
+    run = (VELOCITY_RUN_PRE_S - VELOCITY_SLOW_FROM_S) / VELOCITY_RUN_SPEED
+    slow = (VELOCITY_SLOW_FROM_S + VELOCITY_SLOW_TO_S) / 0.25
+    third = (VELOCITY_SLOW_TO_S + VELOCITY_REWIND_TO_S) / 3
+    rew = [third / s for s in VELOCITY_REWIND_SPEEDS]
+    final = VELOCITY_REWIND_TO_S + VELOCITY_FINAL_POST_S
+    last = hooks[-1]
+    want = run + slow + sum(rew) + final
+    check("the last kill: in, slow-mo, rewind, normal", abs(probe_duration(last) - want) <= 0.08,
+          f"{probe_duration(last):.3f} s, want {want:.3f}")
+    edges = [0.0, run, run + slow, run + slow + rew[0], run + slow + rew[0] + rew[1],
+             run + slow + sum(rew), want]
+    parts = [("in at 1.5x", 50 * VELOCITY_RUN_SPEED), ("slow-mo at 0.25x", 50 * 0.25)] + [
+        (f"rewind at {s}x", -50 * s) for s in VELOCITY_REWIND_SPEEDS] + [("then normal speed", 50.0)]
+    for (name, expect), a, b in zip(parts, edges, edges[1:]):
+        pad = min(0.05, (b - a) / 5)
+        got = speed(last, a + pad, b - pad)
+        check(name, abs(got - expect) <= max(4.0, abs(expect) * 0.15), f"{got:.0f} px/s, want {expect:.0f}")
     a_dur = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries",
-                            "stream=duration", "-of", "csv=p=0", str(b)],
+                            "stream=duration", "-of", "csv=p=0", str(last)],
                            capture_output=True, text=True).stdout.strip()
-    check("the sound is as long as the picture", abs(float(a_dur) - probe_duration(b)) <= 0.06,
+    check("the sound is as long as the picture", abs(float(a_dur) - probe_duration(last)) <= 0.08,
           f"audio {a_dur} s")
     (tmp / "plain").mkdir()
     plain = build_intro_hook(plan, cands, clips, tmp / "plain",
