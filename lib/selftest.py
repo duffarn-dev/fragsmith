@@ -231,7 +231,7 @@ def check_clip(r: Report, path: Path, want_fps: int | None, want_height: int) ->
         problems.append("mostly black")
     if problems:
         hint = ("A black clip usually means HLAE doesn't work with this CS2 build: update "
-                "HLAE (CS Demo Manager → Settings → Video)." if "mostly black" in problems else "")
+                "HLAE (CS Demo Manager → a match → Video tab → Update in the HLAE box)." if "mostly black" in problems else "")
         r.fail(f"{desc} — {', '.join(problems)}", hint)
     else:
         r.ok(desc)
