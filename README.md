@@ -111,7 +111,7 @@ Yes. Music comes from your own folder. Point `[effects].lut` at any `.cube` file
 - Music from a local folder only.
 - Player POV only, no cinematic camera paths.
 - Windows only, because CS Demo Manager and HLAE are.
-- CS2 updates sometimes break HLAE for a few days, until a new HLAE is out. Update it in CS Demo Manager (**Settings → Video → HLAE**); updating CS Demo Manager itself doesn't. See [docs/troubleshooting.md](docs/troubleshooting.md).
+- CS2 updates sometimes break HLAE for a few days, until a new HLAE is out. Update it in CS Demo Manager (open a match, its **Video** tab, **Update** in the HLAE box); updating CS Demo Manager itself doesn't. See [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Documentation
 

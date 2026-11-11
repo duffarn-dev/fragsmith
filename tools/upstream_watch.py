@@ -53,7 +53,7 @@ TOOLS = [
     Tool("cs2", "CS2",
          "Let Steam update CS2 on the render PC (start Steam and wait until the update is done)."),
     Tool("hlae", "HLAE",
-         "Update HLAE on the render PC: CS Demo Manager → Settings → Video → HLAE."),
+         "Update HLAE on the render PC: in CS Demo Manager, open a match, its Video tab, Update in the HLAE box."),
     Tool("cs_demo_manager", "CS Demo Manager",
          "Install the new CS Demo Manager on the render PC (installer on the release page)."),
     Tool("demoparser2", "demoparser2",

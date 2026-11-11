@@ -59,7 +59,7 @@ Every step prints OK, WARN or FAIL. The result ends with PASS or FAIL, and the d
 
 | Symptom | Likely cause | What to do |
 |---|---|---|
-| CS2 crashes or HLAE shows error dialogs right after a CS2 update | HLAE doesn't support the new CS2 build yet | Wait for an HLAE release (the watcher opens an issue for it), then update HLAE via CS Demo Manager → Settings → Video. Nothing to change in Fragsmith. |
+| CS2 crashes or HLAE shows error dialogs right after a CS2 update | HLAE doesn't support the new CS2 build yet | Wait for an HLAE release (the watcher opens an issue for it), then update HLAE in CS Demo Manager: open a match, its Video tab, Update in the HLAE box. Nothing to change in Fragsmith. |
 | Parsing fails or events look wrong after a demoparser2 release | demoparser2 changed behavior | Hotfix: pin the last good version in `requirements.txt` (`demoparser2>=0.41.3,<X`) and release a patch (see [releasing.md](releasing.md#hotfix)). Then fix properly on `develop`. |
 | `csdm video` fails or behaves differently after a CS Demo Manager release | the CLI changed | Stay on the previous installer on the render PC, and check the CS Demo Manager changelog. Adapt `worker.py` on `develop`. |
 | "Demo file incompatible with this game version", or playback fails for one demo while fresh demos render fine | the demo is from an older CS2 version | Not a Fragsmith problem: get a fresh demo ([troubleshooting.md](troubleshooting.md#demo-file-incompatible-with-this-game-version)). |

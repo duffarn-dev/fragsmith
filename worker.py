@@ -347,7 +347,7 @@ def render_job(
             if "hlae" in output.lower():
                 hint = (
                     " (HLAE-related? Game updates break HLAE — update it in "
-                    "CS Demo Manager → Settings → Video and try again.)"
+                    "CS Demo Manager (a match → Video tab → Update in the HLAE box) and try again.)"
                 )
             raise RuntimeError(
                 f"csdm video failed in pass {i}/{len(configs)} "
@@ -478,7 +478,7 @@ def main() -> int:
             if consecutive_failures >= 2:
                 log(
                     "STOPPING: 2 job failures in a row. Check whether a game update "
-                    "broke HLAE (update it in CS Demo Manager → Settings → Video; "
+                    "broke HLAE (update it in CS Demo Manager: a match → Video tab → Update in the HLAE box; "
                     "updating CS Demo Manager itself doesn't), see worker.log.",
                     job_dir,
                 )
