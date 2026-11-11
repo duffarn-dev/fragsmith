@@ -1,11 +1,12 @@
 """`python main.py selftest`: does Fragsmith still work with what's installed?
 
 Runs the real pipeline on a small scale, in whatever render mode is configured:
-a fresh demo is parsed, two clips are picked (the best, usually rendered at
-high fps, and a plain one at the base fps, so both render passes run), the
-render PC renders them, and they're edited to a generated click track. Every
-step is checked: the clips must exist, have the right size and frame rate and
-not be black (a broken HLAE can "render" an empty picture).
+a fresh demo is parsed, three clips are picked (the best, usually rendered at
+high fps, a plain one at the base fps, and 2 s around the best kill with
+motion blur, so all three render passes run), the render PC renders them,
+and they're edited to a generated click track. Every step is checked: the
+clips must exist, have the right size and frame rate and not be black (a
+broken HLAE can "render" an empty picture), and the blur clip must be blended.
 
 The versions found on this PC and on the render PC are compared with
 compat/tested-versions.json. After a PASS, --write-tested records them there.
@@ -118,6 +119,57 @@ def first_clip_at_base_fps(plan) -> None:
     first.effects_off = sorted(set(first.effects_off) | {"headshot_punch", "replay"})
 
 
+BLUR_CLIP_PRE_S = 1.5   # the motion-blur clip: this long before the kill...
+BLUR_CLIP_POST_S = 0.5  # ...and this long after (480 fps costs ~11x real time)
+
+
+def add_motion_blur_clip(plan, chosen: list, cfg: dict, tickrate: int) -> tuple[dict, str | None]:
+    """Open the test film with 2 s around the best clip's last kill, motion
+    blur forced on, so the motion-blur render pass runs on a short clip
+    instead of a long one. The other clips go without blur (the climax keeps
+    its replay). Returns (the config to test with, the blur clip's id), with
+    [render].motion_blur switched on so the clip's override counts; the
+    config is unchanged when there's no kill or no blur frame rate."""
+    from lib.models import EditDecision
+
+    base = int(cfg.get("video", {}).get("framerate", 60))
+    if int(cfg.get("render", {}).get("motion_blur_framerate", 480)) <= base:
+        return cfg, None
+    best = max(chosen, key=lambda c: c.hype_score)
+    if not best.kills:
+        return cfg, None
+    kill = best.kills[-1]
+    start = max(0, kill.tick - round(BLUR_CLIP_PRE_S * tickrate))
+    end = kill.tick + round(BLUR_CLIP_POST_S * tickrate)
+    short = best.model_copy(update={
+        "clip_id": f"{best.clip_id}_blur", "start_tick": start, "end_tick": end,
+        "kill_count": 1, "kind": "highlight_single", "clutch_vs": None,
+        "duration_seconds": round((end - start) / tickrate, 1),
+        "kills": [kill.model_copy(update={"offset_s": round((kill.tick - start) / tickrate, 3)})],
+        "weapons": [kill.weapon], "headshots": int(kill.headshot),
+    })
+    for d in plan.decisions:
+        d.order += 1
+        d.effects_off = sorted(set(d.effects_off) | {"motion_blur"})
+    plan.decisions.insert(0, EditDecision(
+        clip_id=short.clip_id, order=1, slowmo_segments=[], overlay_text=None,
+        transition_in="cut", reasoning="Selftest: 2 s with motion blur.",
+        effects_on=["motion_blur"],
+    ))
+    chosen.insert(0, short)
+    return {**cfg, "render": {**cfg.get("render", {}), "motion_blur": "climax"}}, short.clip_id
+
+
+def blended_frames(report_md: Path, clip_id: str) -> int | None:
+    """motion_blur_frames for a clip, from the cut log in report.md."""
+    text = report_md.read_text(encoding="utf-8") if report_md.exists() else ""
+    m = re.search(r"## Cut log.*?```json\n(.*?)```", text, re.S)
+    if not m:
+        return None
+    entry = next((c for c in json.loads(m.group(1)) if c.get("clip_id") == clip_id), None)
+    return entry.get("motion_blur_frames") if entry else None
+
+
 def make_click_track(path: Path, seconds: int = 150) -> None:
     """120 BPM clicks: a steady beat for steps 5–7 that needs no music folder."""
     expr = "0.6*sin(2*PI*880*t)*exp(-40*mod(t\\,0.5))"
@@ -157,23 +209,10 @@ def black_share(path: Path, duration: float) -> float:
 
 
 def expected_fps(plan, candidates_by_id: dict, cfg: dict) -> dict[str, int]:
-    """The frame rate each raw clip should have: same selection as step 4."""
-    from lib.edit_engine import pick_replay_clip, wants_high_fps
+    """The frame rate each raw clip should have: the same function step 4 uses."""
+    from lib.edit_engine import clip_framerates
 
-    base = int(cfg.get("video", {}).get("framerate", 60))
-    high = int(cfg.get("render", {}).get("highfps_framerate", 0))
-    fx = cfg.get("effects", {})
-    replay = pick_replay_clip(plan, candidates_by_id, cfg)
-    fps = {}
-    for d in plan.decisions:
-        is_high = high > base and (
-            wants_high_fps(d, candidates_by_id[d.clip_id], fx)
-            or (replay and replay[0] == d.clip_id)
-        )
-        fps[d.clip_id] = high if is_high else base
-        if replay and replay[0] == d.clip_id:
-            fps[d.clip_id + "_alt"] = fps[d.clip_id]
-    return fps
+    return clip_framerates(plan, candidates_by_id, cfg)
 
 
 def check_clip(r: Report, path: Path, want_fps: int | None, want_height: int) -> dict:
@@ -192,7 +231,7 @@ def check_clip(r: Report, path: Path, want_fps: int | None, want_height: int) ->
         problems.append("mostly black")
     if problems:
         hint = ("A black clip usually means HLAE doesn't work with this CS2 build: update "
-                "HLAE (CS Demo Manager → Settings → Video)." if "mostly black" in problems else "")
+                "HLAE (CS Demo Manager → a match → Video tab → Update in the HLAE box)." if "mostly black" in problems else "")
         r.fail(f"{desc} — {', '.join(problems)}", hint)
     else:
         r.ok(desc)
@@ -280,7 +319,7 @@ def run_selftest(project_dir: Path, args: argparse.Namespace, cfg: dict,
         elif args.write_tested:
             write_tested(tested_path, report["versions"])
             print(f"Recorded the versions in {tested_path.relative_to(project_dir)}.")
-            print("Commit it in a PR to develop, e.g. 'chore: record tested versions'.")
+            print("Commit it in a PR to develop titled 'chore(compat): record <tool> <version> as tested'.")
         elif newer:
             print(f"Newer than tested: {', '.join(newer)}. Run again with --write-tested "
                   f"to record them in compat/tested-versions.json.")
@@ -357,6 +396,7 @@ def run_selftest(project_dir: Path, args: argparse.Namespace, cfg: dict,
         r.fail(f"The rules Director failed: {exc}")
         return done()
     first_clip_at_base_fps(plan)
+    cfg, blur_id = add_motion_blur_clip(plan, chosen, cfg, int(events.get("tickrate", 64)))
     (run_dir / "00-events.json").write_text(json.dumps(events, ensure_ascii=False), encoding="utf-8")
     (run_dir / "01-candidates.json").write_text(json.dumps(
         {"pov_steamid": pov, "candidates": [c.model_dump() for c in chosen], "flags": []},
@@ -371,7 +411,7 @@ def run_selftest(project_dir: Path, args: argparse.Namespace, cfg: dict,
     mode = render_mode(cfg.get("render", {}))
     _section(f"Step 4: rendering ({mode} mode) — CS2 takes over the render PC's screen")
     raw_dir = run_dir / "03-raw-clips"
-    code = render_cmd(argparse.Namespace(run_dir=str(run_dir)))
+    code = render_cmd(argparse.Namespace(run_dir=str(run_dir), cfg=cfg))
     if mode == "local":
         result_path = run_dir / "render-result.json"
         result = json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else {}
@@ -425,7 +465,8 @@ def run_selftest(project_dir: Path, args: argparse.Namespace, cfg: dict,
 
     # --- Steps 5-7 ----------------------------------------------------------
     _section("Steps 5–7: beats, editing, assembly (to a 120 BPM click track)")
-    code = finish_cmd(argparse.Namespace(run_dir=str(run_dir), music=str(click), clips=None))
+    code = finish_cmd(argparse.Namespace(run_dir=str(run_dir), music=str(click), clips=None,
+                                         cfg=cfg))
     final = run_dir / "final.mp4"
     print()
     if code != 0 or not final.exists():
@@ -433,4 +474,14 @@ def run_selftest(project_dir: Path, args: argparse.Namespace, cfg: dict,
         return done()
     info = check_clip(r, final, None, height)
     report["final"] = info
+    if blur_id:
+        from lib.edit_engine import blur_frames
+
+        render_cfg = cfg.get("render", {})
+        want = blur_frames(fps.get(blur_id, 60), float(render_cfg.get("motion_blur_shutter", 180)), 1.0)
+        got = blended_frames(run_dir / "report.md", blur_id)
+        if got == want:
+            r.ok(f"motion blur: {got} frames blended per frame in {blur_id}")
+        else:
+            r.fail(f"motion blur: {got} frames blended per frame in {blur_id}, expected {want}")
     return done()

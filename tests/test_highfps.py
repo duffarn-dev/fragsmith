@@ -118,10 +118,10 @@ def build_job(high: int = 120) -> dict:
 
 
 def test_build_render_job() -> None:
-    print("build_render_job (schema 1.3):")
+    print("build_render_job (schema 1.5):")
     job = build_job()
     by_id = {c["clip_id"]: c for c in job["clips"]}
-    check("schema 1.3", job["schema_version"] == "1.3")
+    check("schema 1.5", job["schema_version"] == "1.5")
     check("slow-mo clip gets framerate", by_id["a"].get("framerate") == 120)
     check("replay climax gets framerate", by_id["b"].get("framerate") == 120)
     check("normal clip does NOT get framerate", "framerate" not in by_id["c"])
@@ -174,6 +174,19 @@ def test_worker_configs() -> None:
           and configs[0]["framerate"] == 60)
     check("legacy pass has all sequences (incl. alt)",
           {s["number"] for s in configs[0]["sequences"]} == {1, 2, 3, 103})
+    check("no cfg in the job: no cfg in a sequence",
+          all("cfg" not in s for c in configs for s in c["sequences"]))
+
+    # schema 1.4: a clip's commands go to its sequence, not to the replay's
+    # victim angle, and not to the other clips
+    with_cfg = build_job()
+    next(c for c in with_cfg["clips"] if c["clip_id"] == "b")["cfg"] = "spec_mode 3"
+    with tempfile.TemporaryDirectory() as tmp:
+        seqs = {s["number"]: s for c in worker.build_csdm_configs(
+            with_cfg, Path(tmp) / "d.dem", Path(tmp)) for s in c["sequences"]}
+    check("the clip's cfg reaches its sequence", seqs[3].get("cfg") == "spec_mode 3")
+    check("the victim's angle doesn't get it", "cfg" not in seqs[103])
+    check("the other clips don't get it", "cfg" not in seqs[1] and "cfg" not in seqs[2])
 
 
 def make_clip(path: Path, seconds: float, rate: int) -> None:

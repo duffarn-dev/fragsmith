@@ -6,19 +6,15 @@ Have an idea? Open a [feature idea](https://github.com/duffarn-dev/fragsmith/iss
 
 ## Now
 
-The next big theme is **next-level editing**: films that look as if an editor cut them, not a tool. These are being built:
+The big theme is **next-level editing**: films that look as if an editor cut them, not a tool. Most of it is done and ships in the next release: kill context tags ([#29](https://github.com/duffarn-dev/fragsmith/issues/29)), a gap and a boom on the music's drop ([#30](https://github.com/duffarn-dev/fragsmith/issues/30)), kinetic typography ([#31](https://github.com/duffarn-dev/fragsmith/issues/31), [#44](https://github.com/duffarn-dev/fragsmith/issues/44)), transitions on the beat ([#32](https://github.com/duffarn-dev/fragsmith/issues/32)) and motion blur ([#33](https://github.com/duffarn-dev/fragsmith/issues/33)). Still to come in this theme:
 
-- Kill context tags: NOSCOPE, WALLBANG, THROUGH SMOKE, JUMPSHOT and long shots, read from the demo ([#29](https://github.com/duffarn-dev/fragsmith/issues/29))
-- Sound design: a riser, a gap and a boom on the music's drop ([#30](https://github.com/duffarn-dev/fragsmith/issues/30))
+- Research: a camera that flies around the climax kill ([#34](https://github.com/duffarn-dev/fragsmith/issues/34))
 
 ## Next
 
-Decided, and built after the items above:
+Decided, and built after the item above:
 
-- Kinetic typography: text that slams in on the kill ([#31](https://github.com/duffarn-dev/fragsmith/issues/31))
-- Transitions on the beat: whip, zoom and glitch ([#32](https://github.com/duffarn-dev/fragsmith/issues/32))
-- Motion blur from a high-fps render ([#33](https://github.com/duffarn-dev/fragsmith/issues/33))
-- Research: a camera that flies around the climax kill ([#34](https://github.com/duffarn-dev/fragsmith/issues/34))
+- `finish --wait`: Fragsmith waits for the render PC itself, so you don't have to check when it's done ([#50](https://github.com/duffarn-dev/fragsmith/issues/50))
 
 Not decided yet, and the order can change:
 

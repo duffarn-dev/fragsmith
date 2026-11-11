@@ -160,7 +160,9 @@ def run_csdm(csdm: Path, args: list[str], job_dir: Path) -> tuple[int, str]:
 ALT_SEQ_OFFSET = 100  # alternate-POV sequences are numbered base + 100
 
 
-def build_csdm_configs(job: dict, demo_path: Path, raw_dir: Path) -> list[dict]:
+def build_csdm_configs(
+    job: dict, demo_path: Path, raw_dir: Path, campath_dir: Path | None = None
+) -> list[dict]:
     """One csdm config per framerate in the job. csdm has a GLOBAL
     framerate — clips with their own "framerate" field (schema 1.3, slow-mo
     clips at high fps) are therefore grouped into a separate pass with its
@@ -194,14 +196,28 @@ def build_csdm_configs(job: dict, demo_path: Path, raw_dir: Path) -> list[dict]:
                 }
             ],
         }
+        # Game and HLAE commands csdm runs before the sequence (schema 1.4):
+        # a camera, spec_mode, mirv_*. Older jobs have none
+        if clip.get("cfg"):
+            seq["cfg"] = str(clip["cfg"])
+        # A camera path for mirv_campath (schema 1.5): written next to the
+        # job, and its path goes where the cfg says {campath}
+        if clip.get("campath"):
+            folder = campath_dir or raw_dir.parent / "campaths"
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / f"{job['run_id']}_{clip['clip_id']}.xml"
+            path.write_text(str(clip["campath"]), encoding="utf-8")
+            seq["cfg"] = seq.get("cfg", "").replace("{campath}", path.as_posix())
         by_fps.setdefault(fps, []).append(seq)
         # Extra sequence with the same tick range from the VICTIM's POV
         # (instant replay) — inherits the clip's framerate (the replay
         # slows down exactly this angle). Older jobs: no extra sequence.
         if clip.get("alt_pov_steamid"):
+            # the replay is the victim's own eyes, not the clip's camera
+            plain = {k: v for k, v in seq.items() if k != "cfg"}
             by_fps[fps].append(
                 {
-                    **seq,
+                    **plain,
                     "number": clip["number"] + ALT_SEQ_OFFSET,
                     "showXRay": False,
                     "playerCameras": [
@@ -311,7 +327,7 @@ def render_job(
     raw_dir.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
     # One render pass per framerate (separate CS2 launch per pass)
-    configs = build_csdm_configs(job, demo_path, raw_dir)
+    configs = build_csdm_configs(job, demo_path, raw_dir, work_dir / "campaths")
     config_paths: list[Path] = []
     for i, config in enumerate(configs, start=1):
         config_path = work_dir / f"{run_id}.csdm-config-{i}.json"
@@ -331,7 +347,7 @@ def render_job(
             if "hlae" in output.lower():
                 hint = (
                     " (HLAE-related? Game updates break HLAE — update it in "
-                    "CS Demo Manager → Settings → Video and try again.)"
+                    "CS Demo Manager (a match → Video tab → Update in the HLAE box) and try again.)"
                 )
             raise RuntimeError(
                 f"csdm video failed in pass {i}/{len(configs)} "
@@ -462,7 +478,7 @@ def main() -> int:
             if consecutive_failures >= 2:
                 log(
                     "STOPPING: 2 job failures in a row. Check whether a game update "
-                    "broke HLAE (update it in CS Demo Manager → Settings → Video; "
+                    "broke HLAE (update it in CS Demo Manager: a match → Video tab → Update in the HLAE box; "
                     "updating CS Demo Manager itself doesn't), see worker.log.",
                     job_dir,
                 )

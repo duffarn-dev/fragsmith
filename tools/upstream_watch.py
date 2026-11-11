@@ -53,7 +53,7 @@ TOOLS = [
     Tool("cs2", "CS2",
          "Let Steam update CS2 on the render PC (start Steam and wait until the update is done)."),
     Tool("hlae", "HLAE",
-         "Update HLAE on the render PC: CS Demo Manager → Settings → Video → HLAE."),
+         "Update HLAE on the render PC: in CS Demo Manager, open a match, its Video tab, Update in the HLAE box."),
     Tool("cs_demo_manager", "CS Demo Manager",
          "Install the new CS Demo Manager on the render PC (installer on the release page)."),
     Tool("demoparser2", "demoparser2",
@@ -135,7 +135,8 @@ def issue_body(tool: Tool, tested: str, latest: Latest) -> str:
         f"- [ ] {tool.how_to_update}",
         "- [ ] Run `python main.py selftest` with a fresh demo (renders and edits two clips, then compares versions).",
         "- [ ] It passes: run it with `--write-tested` and commit `compat/tested-versions.json` "
-        "in a PR to `develop`. The watcher closes this issue once that reaches `main` in a release.",
+        f"in a PR to `develop` titled `chore(compat): record {tool.name} {latest.version} as tested`. "
+        "The watcher closes this issue once that reaches `main` in a release.",
         "- [ ] It's broken: follow [When an update breaks things]"
         "(https://github.com/duffarn-dev/fragsmith/blob/main/docs/compatibility.md#when-an-update-breaks-things).",
         "",

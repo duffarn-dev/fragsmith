@@ -44,8 +44,18 @@ python tests/test_styles.py
 python tests/test_branding.py
 python tests/test_thumbnail.py
 python tests/test_frame.py
+python tests/test_kill_tags.py
 python tests/test_audio_sync.py
+python tests/test_kinetic.py
+python tests/test_screen_fx.py
+python tests/test_velocity_intro.py
+python tests/test_campath.py
+python tests/test_teaser.py
+python tests/test_bullet_time.py
+python tests/test_sound_design.py
 python tests/test_hype_score.py
+python tests/test_motion_blur.py
+python tests/test_transitions.py
 ```
 
 They need ffmpeg on your PATH. GitHub runs them on every pull request as well. See [tests/README.md](tests/README.md) for patterns worth reusing, such as mock clips at 720p30 instead of 1080p60.

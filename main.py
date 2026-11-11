@@ -232,39 +232,38 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
 
     # --- PHASE STOP: show edit plan + estimates, wait for approval ---------
-    from lib.edit_engine import pick_replay_clip, wants_high_fps
+    from lib.edit_engine import (
+        RENDER_JOB_S,
+        RENDER_PASS_S,
+        clip_framerates,
+        raw_mb_per_min,
+        render_cost,
+        wants_motion_blur,
+    )
 
     by_id = {c.clip_id: c for c in candidates}
     chosen = sorted(plan.decisions, key=lambda d: d.order)
     total_sec = sum(by_id[d.clip_id].duration_seconds for d in chosen)
 
-    # Slow-mo clips are rendered at high fps — same selection as step 4 makes
-    fx = cfg.get("effects", {})
+    # The frame rate per clip: the same function step 4 uses
     base_fps = int(cfg.get("video", {}).get("framerate", 60))
-    high_fps = int(cfg.get("render", {}).get("highfps_framerate", 0))
-    if high_fps <= base_fps:
-        high_fps = 0
-    replay = pick_replay_clip(plan, by_id, cfg)
-    highfps_ids = {
-        d.clip_id for d in chosen
-        if high_fps and (
-            wants_high_fps(d, by_id[d.clip_id], fx)
-            or (replay and replay[0] == d.clip_id)
-        )
-    }
-    high_sec = sum(by_id[cid].duration_seconds for cid in highfps_ids)
+    fps_by_clip = clip_framerates(plan, by_id, cfg)
+    blur_ids = {d.clip_id for d in chosen if wants_motion_blur(d, plan, cfg)}
 
-    # Rough estimates: rendering ~2x real time + startup; raw clips ~40 MB/min
-    # at 1080p60. High-fps clips scale ~linearly with fps (more frames), and
-    # two passes means one extra CS2 launch (~2 min). Two passes only when
-    # the film mixes base-fps and high-fps clips.
-    two_passes = bool(highfps_ids) and len(highfps_ids) < len(chosen)
-    fps_scale = high_fps / base_fps if high_fps else 1.0
+    # Estimates from measured rates (see RENDER_COST): render time per frame
+    # rate, the replay's victim POV included, + a CS2 launch per frame rate;
+    # the raw clips' size per minute at each rate.
+    def clip_sec(cid: str) -> float:
+        return by_id[cid.removesuffix("_alt")].duration_seconds
+
+    passes = len(set(fps_by_clip.values()))
     est_render_min = (
-        total_sec * 2 + high_sec * 2 * (fps_scale - 1)
-        + 120 + (120 if two_passes else 0)
+        sum(clip_sec(cid) * render_cost(f) for cid, f in fps_by_clip.items())
+        + RENDER_PASS_S * passes + RENDER_JOB_S
     ) / 60
-    est_disk_mb = (total_sec + high_sec * (fps_scale - 1)) / 60 * 40
+    est_disk_mb = sum(
+        clip_sec(cid) / 60 * raw_mb_per_min(f) for cid, f in fps_by_clip.items()
+    )
 
     print()
     print("=" * 64)
@@ -281,19 +280,23 @@ def cmd_run(args: argparse.Namespace) -> int:
             extras.append(f'"{d.overlay_text}"')
         if d.slowmo_segments:
             extras.append(f"{len(d.slowmo_segments)} slow-mo")
-        if d.clip_id in highfps_ids:
-            extras.append(f"{high_fps} fps")
+        if fps_by_clip[d.clip_id] != base_fps:
+            extras.append(f"{fps_by_clip[d.clip_id]} fps")
+        if d.clip_id in blur_ids:
+            extras.append("motion blur")
         print(
             f"  {d.order:>2} {d.clip_id:<22} {c.hype_score:>6.2f} "
             f"{c.duration_seconds:>6.1f}  {', '.join(extras)}"
         )
     if plan.dropped_clip_ids:
         print(f"  Dropped: {', '.join(plan.dropped_clip_ids)}")
-    if highfps_ids:
+    high = sorted(cid for cid in fps_by_clip
+                  if fps_by_clip[cid] != base_fps and not cid.endswith("_alt"))
+    if high:
         print(
-            f"  {len(highfps_ids)} clip(s) rendered at {high_fps} fps "
-            f"(real smooth slow-mo)"
-            + (" — rendering runs in 2 passes." if two_passes else ".")
+            f"  {len(high)} clip(s) rendered above {base_fps} fps (real slow-mo"
+            + (", motion blur" if blur_ids else "") + ")"
+            + (f" — rendering runs in {passes} passes." if passes > 1 else ".")
         )
     print(
         f"  Total clip time: {total_sec:.0f} s | rough render estimate: "
@@ -312,7 +315,7 @@ def cmd_render(args: argparse.Namespace) -> int:
     job that starts CS2 rendering.
     """
     read_learnings()
-    cfg = load_config()
+    cfg = getattr(args, "cfg", None) or load_config()  # the selftest passes its own
 
     run_dir = Path(args.run_dir)
     if not run_dir.is_absolute():
@@ -344,14 +347,16 @@ def cmd_render(args: argparse.Namespace) -> int:
     )
 
     job = build_render_job(run_id, plan, candidates_by_id, pov_steamid, pov_name, cfg)
-    high = [c for c in job["clips"] if c.get("framerate")]
-    if high:
-        two_passes = len(high) < len(job["clips"])
-        print(
-            f"{len(high)} clip(s) rendered at {high[0]['framerate']} fps "
-            f"({', '.join(c['clip_id'] for c in high)})"
-            + (" — 2 render passes (one extra CS2 launch)." if two_passes else ".")
-        )
+    # one CS2 launch per frame rate (clips without one use the base rate)
+    by_rate: dict[int, list[str]] = {}
+    for c in job["clips"]:
+        by_rate.setdefault(c.get("framerate", 0), []).append(c["clip_id"])
+    for rate, ids in sorted(by_rate.items()):
+        if rate:
+            print(f"{len(ids)} clip(s) rendered at {rate} fps ({', '.join(ids)})")
+    if len(by_rate) > 1:
+        print(f"{len(by_rate)} render passes ({len(by_rate) - 1} extra CS2 launch"
+              f"{'es' if len(by_rate) > 2 else ''}).")
     n_alt = sum(1 for c in job["clips"] if c.get("alt_pov_steamid"))
     if n_alt:
         alt = next(c for c in job["clips"] if c.get("alt_pov_steamid"))
@@ -452,7 +457,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
     """Steps 5-7: beats + editing + assembly. Requires raw clips (step 4) in
     <run-dir>/03-raw-clips/ (or --clips)."""
     read_learnings()
-    cfg = load_config()
+    cfg = getattr(args, "cfg", None) or load_config()  # the selftest passes its own
 
     run_dir = Path(args.run_dir)
     if not run_dir.is_absolute():
@@ -463,7 +468,13 @@ def cmd_finish(args: argparse.Namespace) -> int:
         print(f"ERROR: cannot find {plan_path} — run 'run' first.")
         return 1
 
-    from lib.assemble import assemble, build_intro_hook, write_report
+    from lib.assemble import (
+        assemble,
+        build_intro_hook,
+        drop_cue,
+        drop_cue_times,
+        write_report,
+    )
     from lib.beats import analyze_beats
     from lib.edit_engine import build_segments, plan_drop_sync
     from lib.ffmpeg_util import FfmpegError, probe_duration
@@ -643,6 +654,12 @@ def cmd_finish(args: argparse.Namespace) -> int:
             k: v for k, v in drop_info.items() if k != "beats"
         }
 
+    # The riser, gap and boom go on the drop, or on the climax clip without one
+    cue = drop_cue(plan, cut_log, drop_info, beats.get("bpm"))
+    cue_times = drop_cue_times(cue, cfg)
+    if cue_times:
+        beats_used = {**beats_used, "drop_cues": cue_times}
+
     print("Step 7: assembly (intro, music mix, export) ...")
     try:
         final = assemble(
@@ -650,7 +667,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
             candidates_by_id=candidates_by_id, clips_dir=clips_dir,
             events=events, cut_log=cut_log,
             hook_files=hooks, intro_seconds=intro_s,
-            music_offset=music_offset,
+            music_offset=music_offset, drop_cue=cue,
         )
     except FfmpegError as exc:
         print(f"STOPPED in step 7: {exc}")
@@ -694,12 +711,32 @@ def cmd_finish(args: argparse.Namespace) -> int:
                 events=events, cut_log=vcut_log, hook_files=vhooks,
                 intro_seconds=intro_s, music_offset=music_offset,
                 frame=PORTRAIT, final_name="final-vertical.mp4", work_dir=vdir,
+                drop_cue=cue,
             )
         except FfmpegError as exc:  # the landscape film is done either way
             flags.append(f"No vertical film: {str(exc).splitlines()[0]}")
         else:
             flags.extend(f for f in vflags if f not in flags)
             print(f"    {vertical.name} in {time.monotonic() - t0:.0f} s")
+
+    teaser = None
+    if getattr(args, "teaser", False):
+        from lib.teaser import build_teaser
+
+        print("Teaser: quick cuts, the climax on the drop ...")
+        drops = beats.get("drops") or []
+        drop_track_s = (
+            drop_info["drop_track_s"] if drop_info
+            else (float(drops[0]["time_s"]) if drops else None)
+        )
+        try:
+            teaser = build_teaser([(plan, candidates_by_id, clips_dir)], music_path,
+                                  drop_track_s, run_dir, cfg, log_path)
+        except (FfmpegError, ValueError) as exc:  # the film is done either way
+            flags.append(f"No teaser: {str(exc).splitlines()[0]}")
+        else:
+            print(f"    {teaser[0].name}: {teaser[1]['seconds']:.1f} s, "
+                  f"the drop at {teaser[1]['drop_s']:.1f} s")
 
     thumbnail = None
     if editing.get("thumbnail", True):
@@ -715,7 +752,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
 
     report = write_report(
         plan, candidates_by_id, cut_log, flags, beats_used, final, run_dir,
-        events=events, thumbnail=thumbnail, vertical=vertical,
+        events=events, thumbnail=thumbnail, vertical=vertical, teaser=teaser,
     )
 
     if flags:
@@ -729,6 +766,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
         print(f"Thumbnail: {thumbnail}")
     if vertical:
         print(f"Vertical: {vertical}")
+    if teaser:
+        print(f"Teaser: {teaser[0]}")
     print(f"Raw clips are kept until you've watched the film — "
           f"delete them with: python main.py cleanup {args.run_dir}")
     return 0
@@ -785,6 +824,61 @@ def cmd_batch(args: argparse.Namespace) -> int:
     print("Next: review the edit plans and render the ones you want "
           "(python main.py render runs/<id>).")
     return 1 if failed else 0
+
+
+def cmd_teaser(args: argparse.Namespace) -> int:
+    """A teaser from several finished runs ("best of the week"): the kills
+    of all of them, the best climax kill on the music's drop."""
+    from datetime import datetime
+
+    from lib.beats import analyze_beats
+    from lib.ffmpeg_util import FfmpegError
+    from lib.models import EditPlan, Highlight
+    from lib.teaser import build_teaser
+
+    cfg = load_config()
+    sources = []
+    for arg in args.run_dirs:
+        run_dir = Path(arg) if Path(arg).is_absolute() else PROJECT_DIR / arg
+        clips_dir = run_dir / "03-raw-clips"
+        try:
+            plan = EditPlan.model_validate_json(
+                (run_dir / "02-edit-plan.json").read_text(encoding="utf-8"))
+            cands = json.loads((run_dir / "01-candidates.json").read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            print(f"    skipped {run_dir.name}: no edit plan (run `run` first)")
+            continue
+        if not any(clips_dir.glob("*.mp4")):
+            print(f"    skipped {run_dir.name}: no raw clips (deleted by cleanup?)")
+            continue
+        candidates_by_id = {c["clip_id"]: Highlight.model_validate(c) for c in cands["candidates"]}
+        sources.append((plan, candidates_by_id, clips_dir))
+    if not sources:
+        print("STOPPED: none of the runs has an edit plan and raw clips.")
+        return 1
+    music_dir = Path(cfg.get("music", {}).get("music_dir", ""))
+    music_path = Path(args.music) if args.music else Path(sources[0][0].music_track)
+    if not music_path.is_absolute():
+        # by name, also in subfolders and without the extension
+        found = [p for p in sorted(music_dir.rglob("*"))
+                 if p.name == music_path.name or p.stem == music_path.name]
+        music_path = found[0] if found else music_dir / music_path
+    if not music_path.exists():
+        print(f"STOPPED: can't find the music '{music_path}'.")
+        return 1
+    out_dir = Path(args.out) if args.out else PROJECT_DIR / "runs" / f"teaser-{datetime.now():%Y%m%d-%H%M%S}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    drops = analyze_beats(music_path).get("drops") or []
+    print(f"Teaser from {len(sources)} runs, music {music_path.name} ...")
+    try:
+        path, info = build_teaser(sources, music_path, float(drops[0]["time_s"]) if drops else None,
+                                  out_dir, cfg, out_dir / "ffmpeg.log")
+    except (FfmpegError, ValueError) as exc:
+        print(f"STOPPED: {str(exc).splitlines()[0]}")
+        return 1
+    print(f"DONE: {path} ({info['seconds']:.1f} s, {info['kills']} kills, "
+          f"the drop at {info['drop_s']:.1f} s)")
+    return 0
 
 
 def cmd_cleanup(args: argparse.Namespace) -> int:
@@ -899,6 +993,10 @@ def main() -> int:
         "--vertical", action="store_true",
         help="Also make final-vertical.mp4 (9:16, for Shorts/TikTok) from the same clips",
     )
+    fin_p.add_argument(
+        "--teaser", action="store_true",
+        help="Also make teaser.mp4: ~30 s of quick cuts with the climax on the music's drop",
+    )
     fin_p.set_defaults(func=cmd_finish)
 
     batch_p = sub.add_parser("batch", help="Process every demo in a folder (steps 0-3)")
@@ -914,6 +1012,14 @@ def main() -> int:
         help="Effect style for every film (overrides [style].preset)",
     )
     batch_p.set_defaults(func=cmd_batch)
+
+    teaser_p = sub.add_parser(
+        "teaser", help="A ~30 s teaser from several finished runs (\"best of the week\")")
+    teaser_p.add_argument("run_dirs", nargs="+", help="Paths to runs/<id>/ (their raw clips are used)")
+    teaser_p.add_argument("--music", help="Music file (name in the music folder, or a path); "
+                                          "default: the first run's track")
+    teaser_p.add_argument("--out", help="Folder for teaser.mp4 (default: runs/teaser-<time>/)")
+    teaser_p.set_defaults(func=cmd_teaser)
 
     clean_p = sub.add_parser("cleanup", help="Delete raw clips/segments for a run")
     clean_p.add_argument("run_dir", help="Path to runs/<id>/")

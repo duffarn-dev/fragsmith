@@ -45,11 +45,22 @@ job_dir = ""
 # disk for those clips. 0 = off (everything renders at [video].framerate).
 highfps_framerate = 120
 
+# Real motion blur: the clip is rendered at motion_blur_framerate and each
+# output frame blends the frames its shutter covers (180 = half of 1/60 s,
+# as on a film camera; slow-mo stays sharp). "climax" = the film's climax
+# clip, "all" = every clip, "off". Costs ~11x the clip's length in render
+# time at 480 fps (a 15 s climax: ~3 min, twice that with the replay's
+# victim angle) and ~4x the disk of a 60 fps clip.
+motion_blur = "off"
+motion_blur_framerate = 480
+motion_blur_shutter = 180
+
 # trueView gives the correct POV body/arms in HLAE. UNVERIFIED on recent
 # CS2 versions: check that the crosshair/killfeed survive on the first render
 # and note the result in learnings_runtime.md. X-ray is set automatically per
 # clip (ace/clutch/AWP) and has no flag of its own here.
 true_view = true
+cinematic_approach = "off"  # "climax": the climax clip in third person until 1.5 s before the first kill
 
 [selftest]
 # `python main.py selftest` uses the newest .dem/.dem.bz2 in this folder
@@ -73,6 +84,9 @@ max_retries = 3
 #   "clean"     = grade and beat cuts; no zooms, flashes, counters or sound effects
 #   "hype"      = everything on and stronger
 #   "cinematic" = letterbox, grain, slow pushes, long freezes, the instant replay
+#   "neon"      = hype with cyan glitch text, a glow and a shake on the kills
+#   "rage"      = hype, harder: red text, a strong shake, only whip cuts
+#   "dream"     = cinematic with a strong glow and gold text that pops in
 # A preset overrides only the switches it names (docs/effects.md lists them).
 # python main.py run --style hype overrides this for one film.
 preset = "custom"
@@ -85,12 +99,15 @@ vignette = true          # darker corners
 beat_zoom = true         # pulse zoom that thumps on the beats
 beat_zoom_strength = 0.5 # 0.5 = subtle, 2.0 = aggressive (1.4 can feel "laggy")
 flash_transitions = true # white flash into clips (where the Director chose "cut")
+transitions = []         # on clip changes, taking turns: "whip", "zoom", "glitch" ([] = hard cuts)
 wobble = false           # off: beat-synced shaking can feel restless
 kill_zoom = true         # deep zoom into the crosshair on the last kill of each clip
 kill_zoom_factor = 1.7   # how far in (1.7 = 70%)
 kill_tilt = true         # dutch tilt on the film's climax kill (combined with kill_zoom)
 kill_tilt_degrees = 22.0 # clamped automatically so the zoom covers the black corners
 intro_hook = true        # "cold open": 3 micro glimpses of top kills before the intro card
+intro_hook_style = "glimpses"  # "velocity": kills in quick succession, the last in slow-mo, rewound, then at normal speed
+intro_hook_kills = 6     # how many kills the velocity cold open shows (2-8)
 slowmo_punch = true      # slow push-in zoom during slow-mo segments
 eased_ramps = true       # smooth speed transitions into/out of slow-mo
 smooth_slowmo = true     # optical flow interpolated slow-mo: smoother, but slower encode
@@ -105,10 +122,19 @@ headshot_punch = true    # small zoom punch on headshots; the last kill is cover
 headshot_punch_strength = 1.0  # 1.0 ≈ 1.18× zoom (also scaled by intensity, capped at 1.22×)
 headshot_micro_slowmo = true   # short 0.4× moment around the headshot punch
 kill_counter = true      # counter 1→2→3→4K/ACE synced to each kill, clips with 3+ kills
+kill_tags = true         # NOSCOPE / WALLBANG / THROUGH SMOKE / JUMPSHOT / BLIND / long shot
+                         # callout under the crosshair on the kill (from the demo's kill events)
 lowerthird = true        # subtle context line in the bottom left: map · round · 1vX
 animated_overlays = true # overlay text slides up + fades instead of a hard on/off
+kinetic_text = false     # overlay text, kill counter and kill tags slam in with a glow (needs Pillow)
+text_color = "amber"     # the glow and the kill tags: amber, red, cyan, magenta, lime, gold, white or "#rrggbb"
+text_animation = "slam"  # how kinetic text comes in: slam, pop, glitch or type
 impact_split = true      # 3 frames of color shift on big kills; follows the punch selection
+impact_shake = false     # the picture shakes on big kills and settles in 0.35 s (zooms 4 % meanwhile)
+impact_shake_strength = 1.0
+glow = 0.0               # bloom on the bright parts: 0.0 off, 1.0 strong
 instant_replay = true    # the climax kill is rewound and shown in slow-mo from the
+replay_style = "victim"  # "bullet_time": the camera circles you once around the kill, at 0.25x (the matrix style)
                          # victim's POV (needs an extra render pass: more render time/disk)
 
 [editing]
@@ -125,9 +151,13 @@ sidechain_ratio = 8.0          # how hard it ducks (higher = more)
 sidechain_release_ms = 300     # how fast the game audio comes back up
 stats_outro = true             # outro with kills/K-D/HS%/best clutch instead of just text
 thumbnail = true               # thumbnail.jpg (1280x720) of the climax kill next to final.mp4
-sfx = true                     # whoosh into clip changes + impact on big kills
+sfx = true                     # impact on big kills
+whoosh = false                 # a whoosh into every clip change too (needs sfx)
 sfx_volume = 0.35              # SFX level in the mix (impact gets ×1.3)
 sfx_dir = "assets/sfx"         # your own .wav files here override; if missing, they're synthesized
+riser = false                  # a rising sweep into the music's drop (or into the climax clip without one)
+drop_gap = false               # a split second of silence just before the drop, so it hits harder
+drop_boom = false              # a sub boom on the drop
 
 [branding]
 # Your own look. Paths are relative to the Fragsmith folder unless absolute.

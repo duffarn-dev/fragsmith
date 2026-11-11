@@ -31,7 +31,7 @@ TYPE_LABEL = {
     "test": "chore", "chore": "chore", "refactor": "chore", "revert": "chore",
 }
 # Labels this tool owns: it adds and removes them. Others are left alone.
-MANAGED = set(TYPE_LABEL.values()) | {"breaking", "skip-changelog"}
+MANAGED = set(TYPE_LABEL.values()) | {"breaking", "skip-changelog", "upstream"}
 
 
 def labels_for(title: str, head_ref: str = "", base_ref: str = "") -> set[str] | None:
@@ -46,6 +46,10 @@ def labels_for(title: str, head_ref: str = "", base_ref: str = "") -> set[str] |
     # what they carry is already listed through the PRs that made it.
     if m["scope"] == "release" or (head_ref, base_ref) in {("develop", "main"), ("main", "develop")}:
         labels.add("skip-changelog")
+    # A tested-versions PR after an upstream update (the watcher's checklist
+    # names the title), listed under Compatibility instead of Maintenance
+    if m["scope"] == "compat":
+        labels.add("upstream")
     return labels
 
 

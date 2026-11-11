@@ -18,6 +18,14 @@ class KillMark(BaseModel):
     headshot: bool
     victim_name: str
     victim_steamid: str = ""  # needed for the victim-POV render (schema 1.2)
+    # kill context from the game event (schema 1.3); the defaults keep older
+    # candidate files readable
+    noscope: bool = False
+    through_smoke: bool = False
+    wallbang: bool = False
+    jumpshot: bool = False
+    blind: bool = False
+    distance_m: float = 0.0
 
 
 class Highlight(BaseModel):
@@ -30,7 +38,7 @@ class Highlight(BaseModel):
     kill_count: int
     kind: Literal["multikill", "clutch", "ace", "highlight_single", "flick"]
     hype_score: float  # 0-10
-    schema_version: str = "1.2"  # 1.1: + kills · 1.2: + victim_steamid
+    schema_version: str = "1.3"  # 1.1: + kills · 1.2: + victim_steamid · 1.3: + kill context
 
     # Context for the AI Director
     round: int = 0
@@ -60,6 +68,7 @@ EffectName = Literal[
     "letterbox", "freeze", "kill_zoom",
     "headshot_punch", "impact_split", "kill_counter",
     "replay",  # instant replay of the last kill from the victim's POV (max one clip)
+    "motion_blur",  # rendered at [render].motion_blur_framerate and blended
 ]
 
 
@@ -70,7 +79,9 @@ class EditDecision(BaseModel):
     order: int
     slowmo_segments: list[SlowmoSegment]
     overlay_text: Optional[str]  # e.g. "1v4 CLUTCH"
-    transition_in: Literal["cut", "fade", "speed_ramp"]
+    # whip/zoom/glitch: a transition from the previous clip, if the style
+    # allows it ([effects].transitions); "cut" lets the style choose
+    transition_in: Literal["cut", "fade", "speed_ramp", "whip", "zoom", "glitch"]
     reasoning: str  # the Director must justify its choice
 
     # All default to off/empty, so behavior is deterministic and unchanged

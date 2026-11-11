@@ -93,6 +93,7 @@ def test_plan() -> None:
           and "**2.193.0**" in body)
     check("body says how to test and record", "python main.py selftest" in body and "--write-tested" in body
           and "compat/tested-versions.json" in body)
+    check("body names the PR title", "`chore(compat): record HLAE 2.193.0 as tested`" in body)
     check("body links the release notes", "https://example.com/hlae" in body)
 
     existing = [{"number": 7, "title": "Upstream: HLAE 2.193.0", "state": "closed"}]

@@ -1,8 +1,8 @@
 """Style presets: one word for a tuned set of effects.
 
-A preset overrides only the keys it names in [effects]/[editing]; everything
-else keeps the user's value. "custom" overrides nothing, so the config is used
-exactly as written.
+A preset overrides only the keys it names in [effects]/[editing]/[render];
+everything else keeps the user's value. "custom" overrides nothing, so the
+config is used exactly as written.
 
 Left alone on purpose:
 - [effects].enabled stays the master switch (false still turns everything off)
@@ -37,12 +37,15 @@ STYLES: dict[str, dict[str, dict]] = {
             "headshot_punch": False,
             "headshot_micro_slowmo": False,
             "kill_counter": False,
+            "kill_tags": False,
             "lowerthird": True,
             "animated_overlays": True,
+            "kinetic_text": False,
             "impact_split": False,
             "instant_replay": False,
+            "transitions": [],
         },
-        "editing": {"sfx": False},
+        "editing": {"sfx": False, "riser": False, "drop_gap": False, "drop_boom": False},
     },
     # Everything on and stronger: the classic fragmovie.
     "hype": {
@@ -67,12 +70,21 @@ STYLES: dict[str, dict[str, dict]] = {
             "headshot_punch_strength": 1.2,
             "headshot_micro_slowmo": True,
             "kill_counter": True,
+            "kill_tags": True,
             "lowerthird": True,
             "animated_overlays": True,
+            "kinetic_text": True,
             "impact_split": True,
             "instant_replay": True,
+            "transitions": ["whip", "zoom", "glitch"],
         },
-        "editing": {"sfx": True, "sfx_volume": 0.45},
+        "editing": {
+            "sfx": True,
+            "sfx_volume": 0.45,
+            "drop_gap": True,
+            "drop_boom": True,
+        },
+        "render": {"motion_blur": "climax"},
     },
     # Film look: letterbox, grain, slow pushes, long freezes, the replay.
     # Nothing that shakes or flashes.
@@ -98,14 +110,77 @@ STYLES: dict[str, dict[str, dict]] = {
             "headshot_punch": False,
             "headshot_micro_slowmo": False,
             "kill_counter": False,
+            "kill_tags": False,
             "lowerthird": True,
             "animated_overlays": True,
+            "kinetic_text": False,
             "impact_split": False,
             "instant_replay": True,
+            # a push, never a whip or a glitch
+            "transitions": ["zoom"],
         },
-        "editing": {"sfx": True, "sfx_volume": 0.25},
+        # the silence, but no boom: it's a film, not a club
+        "editing": {
+            "sfx": True,
+            "sfx_volume": 0.25,
+            "drop_gap": True,
+            "drop_boom": False,
+        },
+        "render": {"motion_blur": "climax"},
     },
 }
+
+
+def _on_top_of(base: str, **sections: dict) -> dict:
+    """A style pack: another preset with some switches changed, so it cuts
+    like its base and only looks different."""
+    pack = {section: dict(values) for section, values in STYLES[base].items()}
+    for section, values in sections.items():
+        pack[section] = {**pack.get(section, {}), **values}
+    return pack
+
+
+# Style packs: the hype or cinematic cut with a look of its own, made from the
+# text looks, the glow and the impact shake (all off in the three above)
+STYLES["neon"] = _on_top_of("hype", effects={
+    "intro_hook_style": "velocity",
+    "text_color": "cyan",
+    "text_animation": "glitch",
+    "glow": 0.5,
+    "impact_shake": True,
+    "wobble": False,  # the shake on the kills is the movement
+    "grain": 0.0,
+    "transitions": ["glitch", "whip"],
+})
+STYLES["rage"] = _on_top_of("hype", effects={
+    "intensity": 1.6,
+    "intro_hook_style": "velocity",
+    "intro_hook_kills": 6,
+    "text_color": "red",
+    "impact_shake": True,
+    "impact_shake_strength": 1.4,
+    "wobble": False,
+    "kill_tilt_degrees": 26.0,
+    "transitions": ["whip"],
+})
+# The user's Matrix idea: bullet time on the climax kill, and the climax clip
+# filmed in third person until the fight
+STYLES["matrix"] = _on_top_of("hype", effects={
+    "replay_style": "bullet_time",
+    "instant_replay": True,
+    "text_color": "lime",
+    "text_animation": "glitch",
+    "glow": 0.3,
+    "wobble": False,
+    "transitions": ["glitch", "zoom"],
+}, render={"cinematic_approach": "climax"})
+STYLES["dream"] = _on_top_of("cinematic", effects={
+    "glow": 0.8,
+    "kinetic_text": True,
+    "text_color": "gold",
+    "text_animation": "pop",
+    "grain": 0.3,
+})
 
 
 def check_style(name: str) -> str:

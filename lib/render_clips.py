@@ -25,8 +25,40 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from lib.edit_engine import pick_replay_clip, wants_high_fps
+from lib.edit_engine import (
+    BT_AFTER_S,
+    BT_BEFORE_S,
+    BT_FPS,
+    BT_ORBIT_FROM_S,
+    BT_ORBIT_TO_S,
+    _climax_clip_id,
+    bullet_time_on,
+    clip_framerates,
+    pick_replay_clip,
+)
 from lib.models import EditPlan, Highlight
+
+TICK_RATE = 64
+BT_SEQ_OFFSET = 200  # the bullet-time sequence: the clip's number + 200
+# [render].cinematic_approach = "climax": the climax clip is in third person
+# (chase cam) until this long before its first kill, then the player's eyes
+APPROACH_POV_BEFORE_S = 1.5
+
+
+def bullet_time_campath(demo_path: str, steamid: str, kill_tick: int) -> str | None:
+    """The camera path that circles the player once around a kill, as
+    mirv_campath XML, or None when the demo can't give their positions."""
+    from lib.campath import campath_xml, orbit_keys, orbit_samples
+
+    ticks = list(range(kill_tick - round(BT_ORBIT_FROM_S * TICK_RATE),
+                       kill_tick + round(BT_ORBIT_TO_S * TICK_RATE) + 1, 4))
+    try:
+        samples, facing = orbit_samples(demo_path, steamid, ticks)
+    except Exception as exc:  # demoparser2 fails now and then; no bullet time then
+        print(f"    no bullet time: the player's positions couldn't be read ({exc})")
+        return None
+    return campath_xml(orbit_keys(samples, facing, radius=120.0, height=8.0,
+                                  sweep=360.0, fov=80.0))
 
 
 def build_render_job(
@@ -39,17 +71,23 @@ def build_render_job(
 ) -> dict:
     video = cfg.get("video", {})
     render_cfg = cfg.get("render", {})
-    fx = cfg.get("effects", {})
     # Instant replay: the replay clip gets an EXTRA sequence from the victim's
     # POV. The selection MUST match edit_engine.pick_replay_clip (same function).
     replay = pick_replay_clip(plan, candidates_by_id, cfg)
-    # Clips with slow-mo are rendered at high fps → real smooth slow-down.
-    # csdm has a GLOBAL framerate, so the worker splits the job into one
-    # pass per framerate (separate CS2 launch).
+    # Slow-mo and the replay go to high fps (real smooth slow-down), motion
+    # blur to its own, higher rate. csdm has a GLOBAL framerate, so the
+    # worker splits the job into one pass per framerate (separate CS2 launch).
     base_fps = int(video.get("framerate", 60))
-    high_fps = int(render_cfg.get("highfps_framerate", 0))
-    if high_fps <= base_fps:
-        high_fps = 0  # off (or misconfigured)
+    fps_by_clip = clip_framerates(plan, candidates_by_id, cfg)
+    # The matrix style: the replay is bullet time, its own short clip with a
+    # camera path, instead of the victim's eyes
+    bt_xml = (
+        bullet_time_campath(plan.demo_path, pov_steamid, replay[1].tick)
+        if replay and bullet_time_on(cfg) else None
+    )
+    bullet = bt_xml is not None  # without a path, the normal replay
+    approach = str(render_cfg.get("cinematic_approach", "off")).lower()
+    climax_id = _climax_clip_id(plan)
     clips = []
     for d in sorted(plan.decisions, key=lambda d: d.order):
         cand = candidates_by_id[d.clip_id]
@@ -65,18 +103,41 @@ def build_render_job(
             "end_tick": cand.end_tick,
             "show_xray": show_xray,
         }
-        if replay and replay[0] == d.clip_id and replay[1].victim_steamid:
+        if replay and replay[0] == d.clip_id and replay[1].victim_steamid and not bullet:
             clip["alt_pov_steamid"] = replay[1].victim_steamid
             clip["alt_pov_name"] = replay[1].victim_name
-        # The replay clip always slows down the alternate angle (0.45×) — it
-        # and both its sequences go to high fps, in addition to slow-mo clips
-        if high_fps and (
-            wants_high_fps(d, cand, fx) or (replay and replay[0] == d.clip_id)
-        ):
-            clip["framerate"] = high_fps
+        # Third person until the fight: a chase cam from the start, the
+        # player's eyes before the first kill. On a tick through mirv_cmd:
+        # spec_mode straight in the cfg is undone by csdm's own camera
+        if approach == "climax" and d.clip_id == climax_id and cand.kills:
+            third = cand.start_tick + 8
+            eyes = cand.kills[0].tick - round(APPROACH_POV_BEFORE_S * TICK_RATE)
+            if eyes - third >= TICK_RATE:  # at least a second of it
+                clip["cfg"] = (f'mirv_cmd clear\nmirv_cmd addAtTick {third} "spec_mode 3"\n'
+                               f'mirv_cmd addAtTick {eyes} "spec_mode 2"')
+        # (both sequences of the replay clip share its frame rate)
+        if fps_by_clip[d.clip_id] != base_fps:
+            clip["framerate"] = fps_by_clip[d.clip_id]
         clips.append(clip)
+    if bullet:
+        kill = replay[1]
+        number = next(d.order for d in plan.decisions if d.clip_id == replay[0])
+        clips.append({
+            "clip_id": f"{replay[0]}_bt",
+            "number": number + BT_SEQ_OFFSET,
+            "start_tick": kill.tick - round(BT_BEFORE_S * TICK_RATE),
+            "end_tick": kill.tick + round(BT_AFTER_S * TICK_RATE),
+            "show_xray": False,
+            "framerate": BT_FPS,
+            "campath": bt_xml,
+            "cfg": 'mirv_cmd clear\nmirv_campath clear\nmirv_campath load "{campath}"\n'
+                   "mirv_campath enabled 1",
+        })
     return {
-        "schema_version": "1.3",  # 1.1: + true_view/show_xray · 1.2: + alt_pov · 1.3: + framerate per clip
+        # 1.1: + true_view/show_xray · 1.2: + alt_pov · 1.3: + framerate per
+        # clip · 1.4: + cfg per clip (commands csdm runs before the sequence)
+        # · 1.5: + campath per clip (the worker writes it; {campath} in cfg)
+        "schema_version": "1.5",
         "run_id": run_id,
         "demo_filename": Path(plan.demo_path).name,
         "pov_steamid": pov_steamid,

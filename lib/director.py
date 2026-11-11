@@ -40,8 +40,11 @@ Principles for a good fragmovie:
   But: aces and big clutches (1v3+) should practically always be included.
 - Overlay text short and in gaming slang ("3K", "1v4 CLUTCH", "ACE") — no
   text at all on weaker clips.
-- transition_in: "cut" is the default; "fade" only into a change of tempo;
-  "speed_ramp" where the clip starts in the action.
+- transition_in: "cut" is the default (the style may put a transition there);
+  "fade" only into a change of tempo; "speed_ramp" where the clip starts in
+  the action. "whip" (a fast smeared pan), "zoom" (a push into the next clip)
+  or "glitch" pick a transition from the previous clip, centered on the beat,
+  when the style has transitions; vary them, and save "glitch" for big moments.
 - intro_text/outro_text: short and clean (e.g. player name + map, "GG" etc.).
 
 Effect control (optional, per clip):
@@ -58,6 +61,9 @@ Effect control (optional, per clip):
   "replay" (instant replay: the last kill rewinds and is shown in slow-mo
   from the VICTIM's point of view — default on the climax clip if it has 3+
   kills or a clutch; at most ONE clip can have replay in effects_on).
+  "motion_blur" (real motion blur from a 480 fps render — default only on
+  the climax clip, and only if the style has it; it costs ~11x the clip's
+  length in render time, so add it to at most one more clip, a short one).
   The default rules are good: use this ONLY with a concrete reason (e.g.
   freeze on a 3k that ends the film, letterbox off on a hectic clip, replay
   on the film's single craziest kill). Never numeric parameters — only choices.

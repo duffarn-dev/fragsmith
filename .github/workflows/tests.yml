@@ -34,8 +34,20 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
+      # The Chocolatey feed times out now and then, and choco still exits 0
+      # with nothing installed. Check for ffmpeg and try again, so a feed
+      # hiccup fails here instead of as every suite that needs ffmpeg.
       - name: Install ffmpeg
-        run: choco install ffmpeg --no-progress -y
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            choco install ffmpeg --no-progress -y || true
+            if command -v ffmpeg; then exit 0; fi
+            echo "::warning::ffmpeg isn't installed after attempt $attempt"
+            sleep 30
+          done
+          echo "::error::Couldn't install ffmpeg from Chocolatey. Re-run the job later."
+          exit 1
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run test suites
@@ -54,7 +66,7 @@ jobs:
   tests:
     needs: suite
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: All suites passed
         run: test "${{ needs.suite.result }}" = "success"

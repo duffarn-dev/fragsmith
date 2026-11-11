@@ -66,6 +66,10 @@ def _check_python(r: Report) -> None:
         )
     else:
         r.ok("Python packages: demoparser2, pydantic, librosa")
+    if importlib.util.find_spec("PIL") is None:
+        # optional: only kinetic_text uses it, and it falls back to plain text
+        r.warn("Pillow is not installed: kinetic text falls back to plain text",
+               "pip install -r requirements.txt")
 
 
 def _check_ffmpeg(r: Report) -> None:

@@ -14,10 +14,47 @@ DROP_WIN_S = 2.0        # seconds before/after the beat
 DROP_MIN_RATIO = 1.35   # post RMS must be at least this many times pre RMS
 DROP_MIN_GAP_S = 8.0    # two drops closer than this count as the same one
 DROP_MAX_CANDIDATES = 5
+# The drop's hit is often off the beat grid: in 128 Suno tracks, a third of
+# the drops hit more than 100 ms from the beat they were found on (seen:
+# 0.19 s after it, so the gap and the boom came before the drop and it
+# sounded like a skipping record). The hit is the biggest step in level:
+# the mean over DROP_HIT_SPAN_S after minus the mean over the same span
+# before, so a lone snare in the build-up doesn't count
+DROP_HIT_SPAN_S = 0.15
+DROP_HIT_MIN_DB = 4.0   # a smaller step: the drop swells in, keep the beat
+
+
+def _drop_hit(y, sr: int, beat_t: float, period: float) -> float:
+    """When the drop near a drop beat hits: the biggest step in short-window
+    level within half a beat of it (further away, it's another beat's hit).
+    The beat itself when no step is DROP_HIT_MIN_DB or more."""
+    import librosa
+    import numpy as np
+
+    hop, frame = 64, 256
+    lo = max(0, int((beat_t - period / 2 - DROP_HIT_SPAN_S) * sr))
+    hi = min(len(y), int((beat_t + period / 2 + DROP_HIT_SPAN_S) * sr))
+    if hi - lo < frame:
+        return beat_t
+    rms = librosa.feature.rms(y=y[lo:hi], frame_length=frame, hop_length=hop, center=False)[0]
+    db = 20 * np.log10(rms + 1e-6)
+    k = max(1, int(DROP_HIT_SPAN_S * sr / hop))
+    if len(db) <= 2 * k:
+        return beat_t
+    c = np.concatenate([[0.0], np.cumsum(db)])
+    j = np.arange(k, len(db) - k)
+    step = (c[j + k] - c[j]) / k - (c[j] - c[j - k]) / k
+    # frame j starts at sample j*hop: a step in the signal at sample s puts
+    # the biggest difference where the after-span's frames start at s
+    t = (lo + j * hop) / sr
+    step[np.abs(t - beat_t) > period / 2] = -np.inf
+    i = int(np.argmax(step))
+    return float(t[i]) if step[i] >= DROP_HIT_MIN_DB else beat_t
 
 
 def _detect_drops(y, sr: int, beat_times: list[float]) -> list[dict]:
-    """Energy-based drop candidates, snapped to beats.
+    """Energy-based drop candidates, found on beats and then moved to the
+    moment the drop hits (_drop_hit), which can be between two beats.
 
     A drop candidate is a beat where the RMS energy in the window AFTER is
     clearly higher than in the window BEFORE (build-up → bang), and the
@@ -60,9 +97,10 @@ def _detect_drops(y, sr: int, beat_times: list[float]) -> list[dict]:
         if len(kept) >= DROP_MAX_CANDIDATES:
             break
     max_score = kept[0][1] if kept else 1.0
+    period = float(np.median(np.diff(beat_times))) if len(beat_times) > 1 else 0.5
     return [
         {
-            "time_s": round(t, 3),
+            "time_s": round(_drop_hit(y, sr, t, period), 3),
             "strength": round(score / max_score, 3),
             "ratio": round(ratio, 2),
         }
@@ -110,6 +148,8 @@ def shift_beats(beats: dict, offset_s: float) -> dict:
         for d in beats.get("drops", [])
         if d["time_s"] >= offset_s
     ]
+    if "drop_cut_s" in beats:
+        shifted["drop_cut_s"] = round(beats["drop_cut_s"] - offset_s, 3)
     shifted["music_offset_s"] = round(
         offset_s + float(beats.get("music_offset_s", 0.0)), 3
     )

@@ -3,12 +3,14 @@
 Covers: picking the style (--style, config, default), laying a preset over the
 config without touching anything else, preset keys that really exist in
 config.example.toml, what the presets change in the render (replay, high fps),
-old plans without a style, and the style line in report.md.
+old plans without a style, the style line in report.md, and that no preset
+names a key twice.
 
 Run: python tests/test_styles.py
 """
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 import tempfile
@@ -78,8 +80,29 @@ def test_apply() -> None:
                   not unknown, str(sorted(unknown)) if unknown else "")
         check(f"{name}: leaves enabled, lut and the quality switches alone",
               not {"enabled", "lut", "eased_ramps", "smooth_slowmo"} & set(preset.get("effects", {})))
-    looks = {name: tuple(sorted(p.get("effects", {}).items())) for name, p in STYLES.items()}
-    check("the three presets are all different", len(set(looks.values())) == len(looks))
+    # repr: some values are lists (transitions), which a set can't hold
+    looks = {name: repr(sorted(p.get("effects", {}).items())) for name, p in STYLES.items()}
+    check("the presets are all different", len(set(looks.values())) == len(looks))
+
+    # the packs cut like their base and only look different
+    for pack, base in (("neon", "hype"), ("rage", "hype"), ("dream", "cinematic")):
+        check(f"{pack}: the same editing and render as {base}",
+              STYLES[pack].get("editing") == STYLES[base].get("editing")
+              and STYLES[pack].get("render") == STYLES[base].get("render"))
+        check(f"{pack}: {base} is unchanged by it", STYLES[base]["effects"].get("glow") is None
+              and STYLES[base]["effects"].get("impact_shake") is None)
+    neon = apply_style({}, "neon")["effects"]
+    check("neon: cyan glitch text, glow and the shake",
+          (neon["text_color"], neon["text_animation"], neon["impact_shake"]) == ("cyan", "glitch", True)
+          and neon["glow"] > 0 and neon["kinetic_text"] is True)
+    rage = apply_style({}, "rage")["effects"]
+    check("rage: red text and a harder shake",
+          rage["text_color"] == "red" and rage["impact_shake_strength"] > 1.0)
+    dream = apply_style({}, "dream")["effects"]
+    check("dream: gold pop text, a strong glow, nothing that shakes",
+          (dream["text_color"], dream["text_animation"]) == ("gold", "pop")
+          and dream["glow"] >= 0.8 and dream["kinetic_text"] is True
+          and not dream.get("impact_shake") and dream["wobble"] is False)
 
 
 def three_kill_clip() -> list[Highlight]:
@@ -142,7 +165,22 @@ def test_report(tmp: Path) -> None:
     check("**Style:** hype", "**Style:** hype" in report.read_text(encoding="utf-8"))
 
 
+def test_no_duplicate_keys() -> None:
+    """A dict literal that names a key twice keeps the last one, silently.
+    Merging two PRs that both touched a preset nearly left an old one-line
+    "editing" after the full one, which would have dropped the riser."""
+    print("no key twice in a preset")
+    tree = ast.parse((ROOT / "lib" / "styles.py").read_text(encoding="utf-8"))
+    dupes = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            keys = [k.value for k in node.keys if isinstance(k, ast.Constant)]
+            dupes += sorted({k for k in keys if keys.count(k) > 1})
+    check("no dict in lib/styles.py names a key twice", not dupes, str(dupes))
+
+
 if __name__ == "__main__":
+    test_no_duplicate_keys()
     test_resolve()
     test_apply()
     test_render_side()

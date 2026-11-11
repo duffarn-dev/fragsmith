@@ -21,7 +21,7 @@ With only one PC you don't need any of this: keep `[render].mode = "local"` and 
 - Open the CS Demo Manager app **once** first and finish the setup wizard. It sets up the PostgreSQL database the CLI depends on.
 - Rendering starts CS2 with `-insecure`. That's normal, but don't play VAC-secured matches while the worker is running.
 - The PC is **busy** during rendering because CS2 runs in the foreground. Don't touch it.
-- CS2 updates break HLAE from time to time. Symptom: `csdm video` fails right after a CS2 update. Fix: update HLAE in CS Demo Manager (**Settings → Video → HLAE**; updating CS Demo Manager itself doesn't) and try again. The worker stops by itself after 2 failures in a row.
+- CS2 updates break HLAE from time to time. Symptom: `csdm video` fails right after a CS2 update. Fix: update HLAE in CS Demo Manager (open a match, its **Video** tab, **Update** in the HLAE box; updating CS Demo Manager itself doesn't) and try again. The worker stops by itself after 2 failures in a row.
 
 ## Choose how jobs travel between the PCs
 

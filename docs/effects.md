@@ -12,19 +12,25 @@ Instead of setting every switch below, pick a style:
 
 ```toml
 [style]
-preset = "hype"   # custom | clean | hype | cinematic
+preset = "hype"   # custom | clean | hype | cinematic | neon | rage | dream | matrix
 ```
 
 | Style | Looks like |
 |---|---|
 | `custom` | Your `[effects]` and `[editing]`, exactly as written. The default |
 | `clean` | Grade, vignette and beat cuts. No zooms, flashes, counters, replay or sound effects, and a lower intensity |
-| `hype` | Everything on and stronger: beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, counter, impact split, freeze, replay, louder sound effects |
-| `cinematic` | Letterbox, film grain, slow-mo push-ins, a gentle kill zoom, a long freeze and the replay. Nothing that shakes or flashes |
+| `hype` | Everything on and stronger: motion blur on the climax, whip, zoom and glitch transitions, beat zoom, flash, wobble, kill zoom and tilt, headshot punch and micro slow-mo, kinetic text and counter, impact split, freeze, replay, louder impacts, and a gap and a boom on the drop |
+| `cinematic` | Letterbox, film grain, motion blur on the climax, zoom transitions, slow-mo push-ins, a gentle kill zoom, a long freeze, the replay, and a gap before the drop. Nothing that shakes or flashes |
+| `neon` | `hype`'s cut with the velocity cold open, cyan glitch text, a glow, the impact shake instead of the wobble, glitch and whip transitions, no grain |
+| `rage` | `hype`'s cut, harder: a velocity cold open of 6 kills, red text, a strong impact shake, a steeper tilt, only whip transitions |
+| `dream` | `cinematic`'s cut with a strong glow and gold text that pops in. Still nothing that shakes |
+| `matrix` | `hype`'s cut with bullet time on the climax kill (the camera circles you once at 0.25×, instead of the victim's replay), the climax clip in third person until the fight, and green glitch text |
+
+The last three are style packs: a base style's cut with a look of its own. A pack is a few lines in `lib/styles.py` on top of `hype` or `cinematic`.
 
 - **Only some switches are set.** A preset sets only the switches it names (the full list is in `lib/styles.py`). Everything else keeps your value. That includes `enabled` (still the master switch), your `lut`, and the quality settings `eased_ramps` and `smooth_slowmo`.
 - **For one film:** `python main.py run <demo> --style cinematic` (also `batch --style`).
-- **The style is fixed when the edit plan is made.** It's stored in `02-edit-plan.json`, and `render` and `finish` use it, because the style decides which clips are rendered at 120 fps and whether the replay angle is rendered. `report.md` names it.
+- **The style is fixed when the edit plan is made.** It's stored in `02-edit-plan.json`, and `render` and `finish` use it, because the style decides which clips are rendered at 120 or 480 fps and whether the replay angle is rendered. `report.md` names it.
 - **Trying another style on clips you've already rendered:** change `"style"` in `02-edit-plan.json` and run `finish` again. Slow-mo on a clip that wasn't rendered at 120 fps falls back to interpolation. A replay that wasn't rendered uses your own POV instead of the victim's.
 
 ## Look
@@ -44,6 +50,7 @@ preset = "hype"   # custom | clean | hype | cinematic
 | Eased speed ramps | `[effects].eased_ramps` | Smooth transitions in and out of slow-mo instead of a hard jump |
 | Smooth slow-mo | `[effects].smooth_slowmo` | Optical-flow interpolation (ffmpeg `minterpolate`). Smoother, but encoding is ~5× slower on those segments. Skipped automatically for high-fps clips |
 | High-fps render | `[render].highfps_framerate` | Clips that will get slow-mo are rendered at 120 fps in CS2, giving real frames instead of interpolated ones. *Requires rendering.* 0 = off |
+| Motion blur | `[render].motion_blur`, `motion_blur_framerate`, `motion_blur_shutter` | Real motion blur, the biggest difference between game footage and footage that looks filmed. The clip is rendered at 480 fps, and each output frame blends the frames a 180° shutter would see (4 at normal speed, fewer in slow-mo, so slow-mo stays sharp). `"climax"` (the climax clip), `"all"` or `"off"`; the Claude Director can add it to a clip. *Costs ~11x the clip's length in render time (a 15 s climax: ~3 min, twice that when the replay renders the victim's angle too) and ~4x the disk of a 60 fps clip.* `run` shows the estimate. The 480 fps frames also give the clip's slow-mo, so it needs no 120 fps pass |
 | Freeze frame | `[effects].freeze_on_finish`, `freeze_seconds` | Short freeze on the final kill of an ace or 4k+ |
 | Headshot micro slow-mo | `[effects].headshot_micro_slowmo` | Brief 0.4× moment around a headshot punch |
 
@@ -57,7 +64,10 @@ preset = "hype"   # custom | clean | hype | cinematic
 | Slow-mo push-in | `[effects].slowmo_punch` | Slow push-in zoom during slow-mo segments |
 | Headshot punch | `[effects].headshot_punch`, `headshot_punch_strength` | "Zoom in slowly, snap out fast" on headshots |
 | Impact split | `[effects].impact_split` | 3 frames of color-channel shift on big kills |
+| Impact shake | `[effects].impact_shake` | The picture shakes on big kills (the same kills as the impact split) and settles in 0.35 s. It zooms in 4 % while it shakes, so no edge shows. `impact_shake_strength` (1.0) scales the swing. The text doesn't shake. Unlike `wobble`, nothing moves between kills |
+| Glow | `[effects].glow` | Bloom: the bright parts of the picture glow, like light in a lens. 0.0 is off, 1.0 is strong. Only the brightness, so the colors don't shift |
 | Flash transitions | `[effects].flash_transitions` | White flash into clips where the Director chose a hard cut |
+| Transitions | `[effects].transitions` | A transition on each change from one clip to the next, taking turns through the list: `whip` (a fast pan smeared sideways, 0.27 s), `zoom` (a push into the next clip, 0.33 s), `glitch` (a mosaic with a color split, 0.2 s). The beat stays on the cut: the transition is centered on it, so the film's timing and the drop don't move. The Claude Director can pick one per clip; `"fade"` and the replay keep their own entrance. Replaces the white flash where it's used. `[]` = hard cuts |
 | Wobble | `[effects].wobble` | Beat-synced shake. Off by default because it can feel restless |
 
 ## Overlays
@@ -65,16 +75,22 @@ preset = "hype"   # custom | clean | hype | cinematic
 | Effect | Config | What it does |
 |---|---|---|
 | Kill counter | `[effects].kill_counter` | Counter ticking 1 → 2 → 3 → 4K / ACE on each kill, for clips with 3+ kills |
+| Kill tags | `[effects].kill_tags` | A callout under the crosshair on a special kill: NOSCOPE, WALLBANG, THROUGH SMOKE, JUMPSHOT, BLIND, or the distance of a long shot (35 m+). Up to two per kill, in amber, for about 1 s. Read from the demo's own kill events, so it's never a guess. Special kills also score higher, and a noscope, jumpshot or blind kill gets a clip of its own (a wallbang or smoke kill needs a headshot for that). On in `hype`, off in `clean` and `cinematic` |
 | Lower third | `[effects].lowerthird` | Small context line bottom-left: map · round · 1vX |
 | Animated overlays | `[effects].animated_overlays` | Overlay text slides up and fades instead of popping on and off |
+| Kinetic text | `[effects].kinetic_text` | The overlay text and the kill counter slam in from 1.9× with an overshoot and an amber glow. The overlay text spreads out as it fades. Each new count cuts the last one, and the final count stays to the end of the clip. Kill tags slam in the same way, in the accent color and smaller. Replaces `animated_overlays` for that text |
+| Text color | `[effects].text_color` | The accent color of kinetic text: the glow, and the kill tags' letters. `amber` (the default), `red`, `cyan`, `magenta`, `lime`, `gold`, `white`, or your own as `"#rrggbb"` |
+| Text animation | `[effects].text_animation` | How kinetic text comes in. `slam` (the default): down from 1.9× with an overshoot. `pop`: grows from small with a spring and a wobble. `glitch`: breaks up for 0.3 s (the red and the cyan split sideways, slices slip, it flickers), flickers once in a long text, and breaks up again going out. `type`: the letters appear one by one, with a pulse of glow on each |
+
+Kinetic text is drawn with Pillow (in `requirements.txt`). Without Pillow, the text is drawn plainly, `report.md` says so, and `doctor` warns. Each text is drawn once and kept in `04-segments/kinetic/`, so the 9:16 film and a second `finish` reuse it.
 
 ## Structure
 
 | Effect | Config | What it does |
 |---|---|---|
-| Cold open | `[effects].intro_hook` | 3 micro-glimpses of the top kills before the intro card |
+| Cold open | `[effects].intro_hook` | 3 micro-glimpses of the top kills before the intro card. With `intro_hook_style = "velocity"`, the best `intro_hook_kills` (6, from 2 to 8) kills in quick succession, rising, the best last. The last one drops into slow-mo on the kill, rewinds from slow up to normal speed to just before it, and plays at normal speed into the intro card. The slow-mo is 0.5×, or 0.25× from clips rendered at 240 fps or more (the motion blur clips), so it's always real frames. The rewind is silent, like the replay's |
 | Instant replay | `[effects].instant_replay` | The climax kill rewinds and replays in slow-mo from the victim's POV. *Requires an extra render pass* |
-| Drop sync | `[editing].drop_sync` | Places the climax clip on the music's bass drop, within 100 ms. If the cuts can't land on the strongest drop, it takes the next one they can. Tracks without a clear drop, or with none in reach, fall back to climax-at-the-end |
+| Drop sync | `[editing].drop_sync` | Places the climax clip on the music's bass drop, within 100 ms. The drop is the moment it hits, which is often between two beats: the cut into the climax lands there, and so do the gap and the boom. If the cuts can't land on the strongest drop, it takes the next one they can. Tracks without a clear drop, or with none in reach, fall back to climax-at-the-end |
 | Stats outro | `[editing].stats_outro` | Outro card with kills, K/D, HS% and best clutch instead of plain text |
 | Thumbnail | `[editing].thumbnail` | `thumbnail.jpg` next to `final.mp4`: 1280×720 and under 2 MB, as YouTube asks. The frame is from the climax clip just before the last kill, with the film's grade and LUT, a slight push-in, the climax label (the overlay text, or ACE / 4K / 1vX) and your `[branding]` logo. If it fails, the film is still made, and a flag says why |
 
@@ -89,6 +105,25 @@ Your own look on every film, set in `[branding]`. Paths are relative to the Frag
 | Logo | `[branding].logo`, `logo_position`, `logo_size`, `logo_opacity` | A png (use transparency) in a corner of the whole film: cold open, cards, clips and replay. `logo_size` is its width as a share of the frame (0.12 = 12 %). `bottom-right` is the default; `top-right` covers the killfeed |
 
 The logo costs one extra encode of the film (about 12 s for a one-minute film). Without a logo, nothing changes.
+
+## Bullet time and the cinematic approach (the `matrix` style)
+
+Two cameras that leave the player's eyes, made with HLAE through the clip's commands (job schema 1.4/1.5). They need the `worker.py` from this version on the render PC.
+
+- **Bullet time** (`[effects].replay_style = "bullet_time"`, with `instant_replay`): the replay of the climax kill is a camera circling you once. The camera path is made from your positions in the demo: 120 units out, at eye height, from 1.27 s before the kill to just after it. It's rendered at 480 fps over 2.3 s and played at 0.25×, so the circle takes about 5 s at 120 real frames a second, with the bullets in slow motion. It goes on the climax kill in every film, and replaces the victim's-eyes replay. That extra render is 2.3 s at 480 fps, about as much as the victim's angle it replaces.
+- **The cinematic approach** (`[render].cinematic_approach = "climax"`): the climax clip is in third person (a chase cam) from its start until 1.5 s before its first kill, then in your eyes for the fight. Nothing extra renders.
+- If the demo can't give your positions, there's no bullet time, and the replay is the normal one.
+
+## Teaser
+
+`python main.py finish runs/<id> --teaser` makes `teaser.mp4` next to `final.mp4`: about 30 s, landscape, from the same raw clips, with no extra render.
+
+- **Before the drop:** the weaker kills, each cut shorter than the last (1.25× speed), so they speed up into the drop.
+- **On the drop:** the climax kill as in the velocity cold open: in, slow-mo, rewound, then at normal speed. The normal-speed kill lands on the music's drop, with a boom.
+- **After the drop:** the stronger kills in quicker cuts (1.5×), then a short end card with your outro image.
+- **Every moment once:** kills in one clip less than 3 s apart are one cut (a double or triple kill), and the ones just before the climax kill are in its rewind.
+- **The length depends on the match.** 30 s of quick cuts takes about a dozen kill moments. With fewer, the teaser is shorter, and the drop stays about in the middle (a match with 6 kills makes about 15 s).
+- **Best of the week:** `python main.py teaser runs/<id> runs/<id> ... --music "<song>"` makes one from several finished runs, so there are enough kills for 30 s. The best climax kill of them all goes on the drop, and the others' climax kills are cuts. It uses the runs' raw clips, so run it before `cleanup`. The song is found by name in the music folder, subfolders included, with or without its extension. Four matches made 30.7 s with 23 kills.
 
 ## Vertical 9:16 (Shorts, TikTok)
 
@@ -110,7 +145,24 @@ The logo costs one extra encode of the film (about 12 s for a one-minute film). 
 |---|---|---|
 | Game audio level | `[editing].game_audio_volume` | Game sound volume under the music |
 | Sidechain ducking | `[editing].sidechain_duck` + `sidechain_threshold`, `sidechain_ratio`, `sidechain_release_ms` | Ducks game audio dynamically based on the music's level, for a cleaner mix |
-| Sound effects | `[editing].sfx`, `sfx_volume`, `sfx_dir` | Whoosh into clip changes and impact on big kills. Put your own `.wav` files in `sfx_dir` to override. If they're missing, they're synthesized |
+| Sound effects | `[editing].sfx`, `sfx_volume`, `sfx_dir` | An impact on big kills. Put your own `.wav` files in `sfx_dir` to override. If they're missing, they're synthesized |
+| Whoosh | `[editing].whoosh` | A whoosh into every clip change, in the middle of the transition. Needs `sfx`. Off by default and in every style, because on every cut it's heard on top of the music |
+| Riser | `[editing].riser` | A rising sweep that ends on the music's drop, as loud as the music under it. It's 2 bars long at the track's tempo, 4 s at most. Off by default and in every style |
+| Drop gap | `[editing].drop_gap` | The whole mix drops out just before the drop (1/8 of a beat, at least 0.1 s), so the drop hits after a moment of silence |
+| Drop boom | `[editing].drop_boom` | A sub boom on the drop. It has an octave on top, so phone speakers play it too |
+
+**How the drop cues work:**
+- **Where they go:** on the drop when drop sync has put the climax there. Without a drop, the riser and the boom go on the start of the climax clip.
+- **No gap without a drop:** silence in the middle of a musical phrase sounds like a glitch, not like a build-up.
+- **The riser ends where the gap starts,** so the drop is the first sound after the silence.
+- **Your own sounds:** put your own `riser.wav` or `boom.wav` in `sfx_dir`. A riser longer than needed is cut from its start, so it still ends on its peak.
+- **The riser follows the music.** Its level is measured from the music under it, so a quiet build-up gets a quiet riser:
+  - at `sfx_volume = 0.45` (hype) it ends as loud as the music
+  - at 0.35 (the default) it ends 2.2 dB under it, and at 0.25 (cinematic) 5.1 dB under
+  - a near-silent build-up counts as -30 dB, so the riser is still heard
+- **Level and switches:** the boom follows `sfx_volume`, and the cues are off with `[effects].enabled = false`.
+- **No clipping:** with any of them on, a limiter keeps the mix below 0 dB, so the boom can't clip on the loudest moment of the track.
+- `report.md` lists the cues and where they landed.
 
 ## Render options
 

@@ -14,13 +14,13 @@ Point Fragsmith at a `.dem` file. It finds your best rounds, renders them from y
 
 ## Features
 
-- **Finds the highlights.** Multikills, aces, won clutches (detected from who's alive, not guessed), knife, zeus and AWP headshot moments.
+- **Finds the highlights.** Multikills, aces, won clutches (detected from who's alive, not guessed), knife, zeus and AWP headshot moments, noscopes, wallbangs, jumpshots and kills through smoke, each called out on screen.
 - **Picks the order like an editor would.** Strong opener, build-up, best clip last. Use the built-in rules for free, or let Claude direct the film.
-- **Cuts on the beat.** Every cut snaps to the music, and the climax lands on the track's bass drop.
+- **Cuts on the beat.** Every cut snaps to the music, with a whip, zoom or glitch transition centered on the beat if you like, and the climax lands on the track's bass drop.
 - **Real slow-mo.** Slow-motion clips are rendered at 120 fps, so they're smooth instead of stuttery.
-- **Effects that hit the kills.** Kill zoom, dutch tilt, headshot punch, freeze frame, kill counter, instant replay from the victim's POV, letterbox, color grade, film grain, whooshes and impacts with music ducking. Pick a style (`clean`, `hype`, `cinematic`) or turn each one on or off yourself: [docs/effects.md](docs/effects.md).
+- **Effects that hit the kills.** Kill zoom, dutch tilt, headshot punch, freeze frame, text and a kill counter that slam in, instant replay from the victim's POV, letterbox, color grade, film grain, impacts on the kills with music ducking, and a beat of silence and a boom on the music's drop. A whoosh into every cut and a riser into the drop are there to turn on. Pick a style (`clean`, `hype`, `cinematic`, or the packs `neon`, `rage`, `dream`) or turn each one on or off yourself: [docs/effects.md](docs/effects.md).
 - **Your own look.** Your images behind the intro and outro, your logo on the film, and a ready thumbnail of the climax kill.
-- **Shorts and TikTok too.** `finish --vertical` makes a 9:16 version of the same film from the same clips, with no extra render.
+- **Shorts and TikTok too.** `finish --vertical` makes a 9:16 version of the same film from the same clips, with no extra render. `finish --teaser` adds a ~30 s teaser: quick cuts, and the climax in slow-mo and rewound onto the music's drop. `teaser <run> <run> ...` makes one from several matches.
 - **You stay in control.** Fragsmith stops after the edit plan and shows what it will render and how long it'll take. Nothing renders until you say so. Every film comes with a `report.md` explaining the choices.
 - **One PC or two.** Render on your own PC, or hand rendering to a second PC and keep using your main one.
 
@@ -50,7 +50,7 @@ python -m venv .venv
 
 `main` always holds the latest release, so a fresh clone is the current version. To update later: `git pull`, then `pip install -r requirements.txt` again. What changed in each version is on the [Releases](https://github.com/duffarn-dev/fragsmith/releases) page.
 
-`setup` asks for your SteamID64, your music folder and which PC renders, then writes `config.toml`. `doctor` checks that everything is installed and tells you what's missing. Once it's happy, `python main.py selftest` renders and edits two short clips from a fresh demo, to prove the whole chain works (see [docs/compatibility.md](docs/compatibility.md#the-selftest)). You can also copy `config.example.toml` to `config.toml` and edit it by hand.
+`setup` asks for your SteamID64, your music folder and which PC renders, then writes `config.toml`. `doctor` checks that everything is installed and tells you what's missing. Once it's happy, `python main.py selftest` renders and edits three short clips from a fresh demo, to prove the whole chain works (see [docs/compatibility.md](docs/compatibility.md#the-selftest)). You can also copy `config.example.toml` to `config.toml` and edit it by hand.
 
 ### One PC or two?
 
@@ -81,6 +81,7 @@ python main.py run <demo.dem>        # steps 1–3, shows the edit plan and stop
 python main.py render runs/<id>      # step 4, renders the clips (your approval)
 python main.py finish runs/<id>      # steps 5–7, creates final.mp4 + report.md
                                      #   --vertical also makes final-vertical.mp4 (9:16)
+                                     #   --teaser also makes teaser.mp4 (~30 s)
 python main.py batch <folder>        # steps 1–3 for every demo in a folder
 python main.py cleanup runs/<id>     # deletes raw clips and intermediate files
 ```
@@ -102,7 +103,7 @@ Rendering takes roughly twice the length of the chosen clips, plus a couple of m
 Yes. `python main.py finish runs/<id> --vertical` adds a 9:16 `final-vertical.mp4` of the same film. Overlays and your logo are placed so the app's captions and buttons don't cover them. See [docs/effects.md](docs/effects.md#vertical-916-shorts-tiktok).
 
 **Can I use my own music, LUT or sound effects?**
-Yes. Music comes from your own folder. Point `[effects].lut` at any `.cube` file, and drop your own `whoosh.wav`/`impact.wav` into `assets/sfx/`. The included LUT and sound effects are generated by Fragsmith itself, so they're free to use.
+Yes. Music comes from your own folder. Point `[effects].lut` at any `.cube` file, and drop your own `whoosh.wav`, `impact.wav`, `riser.wav` or `boom.wav` into `assets/sfx/`. The included LUT and sound effects are generated by Fragsmith itself, so they're free to use.
 
 ## Limitations
 
@@ -110,7 +111,7 @@ Yes. Music comes from your own folder. Point `[effects].lut` at any `.cube` file
 - Music from a local folder only.
 - Player POV only, no cinematic camera paths.
 - Windows only, because CS Demo Manager and HLAE are.
-- CS2 updates sometimes break HLAE for a few days, until a new HLAE is out. Update it in CS Demo Manager (**Settings → Video → HLAE**); updating CS Demo Manager itself doesn't. See [docs/troubleshooting.md](docs/troubleshooting.md).
+- CS2 updates sometimes break HLAE for a few days, until a new HLAE is out. Update it in CS Demo Manager (open a match, its **Video** tab, **Update** in the HLAE box); updating CS Demo Manager itself doesn't. See [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Documentation
 
