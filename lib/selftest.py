@@ -319,7 +319,7 @@ def run_selftest(project_dir: Path, args: argparse.Namespace, cfg: dict,
         elif args.write_tested:
             write_tested(tested_path, report["versions"])
             print(f"Recorded the versions in {tested_path.relative_to(project_dir)}.")
-            print("Commit it in a PR to develop, e.g. 'chore: record tested versions'.")
+            print("Commit it in a PR to develop titled 'chore(compat): record <tool> <version> as tested'.")
         elif newer:
             print(f"Newer than tested: {', '.join(newer)}. Run again with --write-tested "
                   f"to record them in compat/tested-versions.json.")
